@@ -110,8 +110,8 @@ private:
     SoftVec demodulate_qpsk(Complex sym, double noise_var) {
         double scale = 2.0 / noise_var;
         SoftVec llr(2);
-        llr(0) = -scale * sym.real();
-        llr(1) = -scale * sym.imag();
+        llr(0) = scale * sym.real();
+        llr(1) = scale * sym.imag();
         return llr;
     }
     
@@ -120,9 +120,9 @@ private:
         double scale = 2.0 * inv_sqrt10 / noise_var;
         SoftVec llr(4);
         
-        llr(0) = -scale * sym.real();
+        llr(0) = scale * sym.real();
         llr(1) = -scale * (std::abs(sym.real()) - 2.0 * inv_sqrt10);
-        llr(2) = -scale * sym.imag();
+        llr(2) = scale * sym.imag();
         llr(3) = -scale * (std::abs(sym.imag()) - 2.0 * inv_sqrt10);
         
         return llr;
@@ -136,10 +136,10 @@ private:
         double re = sym.real();
         double im = sym.imag();
         
-        llr(0) = -scale * re;
+        llr(0) = scale * re;
         llr(1) = -scale * (std::abs(re) - 2.0 * inv_sqrt42);
         llr(2) = -scale * (std::abs(std::abs(re) - 4.0 * inv_sqrt42) - 2.0 * inv_sqrt42);
-        llr(3) = -scale * im;
+        llr(3) = scale * im;
         llr(4) = -scale * (std::abs(im) - 2.0 * inv_sqrt42);
         llr(5) = -scale * (std::abs(std::abs(im) - 4.0 * inv_sqrt42) - 2.0 * inv_sqrt42);
         
@@ -154,11 +154,11 @@ private:
         double re = sym.real();
         double im = sym.imag();
         
-        llr(0) = -scale * re;
+        llr(0) = scale * re;
         llr(1) = -scale * (std::abs(re) - 2.0 * inv_sqrt170);
         llr(2) = -scale * (std::abs(std::abs(re) - 4.0 * inv_sqrt170) - 2.0 * inv_sqrt170);
         llr(3) = -scale * (std::abs(std::abs(std::abs(re) - 4.0 * inv_sqrt170) - 2.0 * inv_sqrt170) - 2.0 * inv_sqrt170);
-        llr(4) = -scale * im;
+        llr(4) = scale * im;
         llr(5) = -scale * (std::abs(im) - 2.0 * inv_sqrt170);
         llr(6) = -scale * (std::abs(std::abs(im) - 4.0 * inv_sqrt170) - 2.0 * inv_sqrt170);
         llr(7) = -scale * (std::abs(std::abs(std::abs(im) - 4.0 * inv_sqrt170) - 2.0 * inv_sqrt170) - 2.0 * inv_sqrt170);

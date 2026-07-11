@@ -17,9 +17,9 @@ int main() {
     SimulationConfig config;
     config.mcs_index = 10;
     config.n_rb = 25;
-    config.n_tx_ant = 2;
-    config.n_rx_ant = 2;
-    config.n_layers = 2;
+    config.n_tx_ant = 1;
+    config.n_rx_ant = 1;
+    config.n_layers = 1;
     config.max_blocks_per_sinr = 20;
     config.target_block_errors = 5;
     config.sinr_start = 0.0;
