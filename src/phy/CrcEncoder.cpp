@@ -1,5 +1,8 @@
 #include "phy/PhyInterfaces.h"
 #include "common/NrTables.h"
+#include <vector>
+#include <cstdint>
+#include <utility>
 
 namespace nr {
 namespace phy {
@@ -10,51 +13,57 @@ public:
         uint32_t poly;
         if (crc_len == 24) {
             poly = 0x1864CFB;
-        } else {
+        } else if (crc_len == 16) {
             poly = 0x11021;
-            crc_len = 16;
+        } else {
+            crc_len = 24;
+            poly = 0x1864CFB;
         }
         
-        int n = bits.n_elem;
-        BitVec result(n + crc_len);
-        result(arma::span(0, n - 1)) = bits;
+        int n = static_cast<int>(bits.size());
+        BitVec result(n + crc_len, 0);
+        for (int i = 0; i < n; i++) {
+            result[i] = bits[i];
+        }
         
         uint32_t crc = 0;
         for (int i = 0; i < n; i++) {
-            uint32_t bit = ((crc >> (crc_len - 1)) ^ bits(i)) & 1;
+            uint32_t bit = ((crc >> (crc_len - 1)) ^ bits[i]) & 1;
             crc <<= 1;
+            crc &= (1U << crc_len) - 1;
             if (bit) {
                 crc ^= poly;
             }
         }
         
         for (int i = 0; i < crc_len; i++) {
-            result(n + i) = (crc >> (crc_len - 1 - i)) & 1;
+            result[n + i] = (crc >> (crc_len - 1 - i)) & 1;
+            crc <<= 1;
+            crc &= (1U << crc_len) - 1;
         }
         
         return result;
     }
     
     std::pair<BitVec, bool> decode(const BitVec& bits, int crc_len) override {
-        if (crc_len == 0) {
-            crc_len = (bits.n_elem > 3824 + 24) ? 24 : 16;
+        if (crc_len <= 0) {
+            crc_len = (static_cast<int>(bits.size()) > 3824 + 24) ? 24 : 16;
         }
-        
         if (crc_len != 16 && crc_len != 24) {
             crc_len = 24;
         }
         
-        int n = bits.n_elem - crc_len;
+        int n = static_cast<int>(bits.size()) - crc_len;
         if (n <= 0) {
             return {BitVec(), false};
         }
         
-        BitVec info_bits = bits(arma::span(0, n - 1));
+        BitVec info_bits(bits.begin(), bits.begin() + n);
         BitVec encoded = encode(info_bits, crc_len);
         
         bool crc_ok = true;
-        for (int i = 0; i < bits.n_elem; i++) {
-            if (bits(i) != encoded(i)) {
+        for (int i = 0; i < static_cast<int>(bits.size()); i++) {
+            if (bits[i] != encoded[i]) {
                 crc_ok = false;
                 break;
             }
@@ -68,5 +77,5 @@ std::unique_ptr<ICrcEncoder> create_crc_encoder() {
     return std::make_unique<CrcEncoderImpl>();
 }
 
-} // namespace phy
-} // namespace nr
+}
+}

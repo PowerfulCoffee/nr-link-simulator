@@ -1,6 +1,5 @@
 #include "phy/PhyInterfaces.h"
-#include "common/NrTables.h"
-#include <cmath>
+#include <armadillo>
 
 namespace nr {
 namespace phy {
@@ -8,7 +7,7 @@ namespace phy {
 class LayerMapperImpl : public ILayerMapper {
 public:
     ComplexMat map(const ComplexVec& symbols, int n_layers) override {
-        int n_symbols = symbols.n_elem;
+        int n_symbols = static_cast<int>(symbols.n_elem);
         int sym_per_layer = (n_symbols + n_layers - 1) / n_layers;
         
         ComplexMat layered(sym_per_layer, n_layers, arma::fill::zeros);
@@ -23,7 +22,7 @@ public:
     }
     
     ComplexVec demap(const ComplexMat& layered_symbols, int n_layers) override {
-        int sym_per_layer = layered_symbols.n_rows;
+        int sym_per_layer = static_cast<int>(layered_symbols.n_rows);
         int total_symbols = sym_per_layer * n_layers;
         
         ComplexVec symbols(total_symbols);
@@ -42,5 +41,5 @@ std::unique_ptr<ILayerMapper> create_layer_mapper() {
     return std::make_unique<LayerMapperImpl>();
 }
 
-} // namespace phy
-} // namespace nr
+}
+}

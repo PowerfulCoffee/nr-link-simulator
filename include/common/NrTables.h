@@ -10,26 +10,28 @@ struct McsTableEntry {
     double code_rate_x1024;
 };
 
-struct LdpcBaseGraphInfo {
+struct LdpcParams {
     int bgn;
     int zc;
-    int k_cb;
+    int k_b;
+    int k;
+    int n;
+    int n_info_bits;
 };
 
 constexpr int MAX_MCS_INDEX = 28;
 
 extern const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_1;
 
-constexpr int MAX_ZC = 384;
-extern const int ZC_VALUES[];
-extern const int NUM_ZC_VALUES;
-
-LdpcBaseGraphInfo select_ldpc_params(int tb_size, double code_rate);
-int get_tbs(int mcs, int n_prb, int n_symbols, int n_layers);
+LdpcParams select_ldpc_params(int k_info, double target_coderate);
 int get_crc_length(int tb_size);
 ModulationScheme mcs_to_modulation(int mcs);
 double mcs_to_code_rate(int mcs);
+int mcs_to_bits_per_symbol(int mcs);
 int mod_to_bits_per_symbol(ModulationScheme mod);
+
+int calculate_tbs(int n_prb, int n_re_per_prb, int qm, int n_layers, double target_coderate);
+int calculate_num_coded_bits(int n_prb, int n_re_per_prb, int qm, int n_layers);
 
 constexpr int get_rb_size(int scs) {
     return 12;
@@ -59,7 +61,6 @@ struct DmrsPattern {
 
 DmrsPattern get_dmrs_pattern(DmrsType type, int additional_pos, int duration);
 
-uint32_t gold_sequence(uint32_t state, int n);
 void generate_pn_sequence(uint32_t cinit, int length, std::vector<uint8_t>& seq);
 
 struct BlerResult {

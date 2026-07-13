@@ -4,36 +4,17 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <armadillo>
+#include <memory>
+#include <random>
 
 namespace nr {
 namespace phy {
-
-extern std::unique_ptr<ICrcEncoder> create_crc_encoder();
-extern std::unique_ptr<ILdpcEncoder> create_ldpc_encoder();
-extern std::unique_ptr<ILdpcDecoder> create_ldpc_decoder();
-extern std::unique_ptr<IRateMatcher> create_rate_matcher();
-extern std::unique_ptr<IScrambler> create_scrambler();
-extern std::unique_ptr<IModulator> create_modulator();
-extern std::unique_ptr<ILayerMapper> create_layer_mapper();
-extern std::unique_ptr<IPrecoder> create_precoder();
-extern std::unique_ptr<IDmrsGenerator> create_dmrs_generator();
-extern std::unique_ptr<IResourceMapper> create_resource_mapper();
-extern std::unique_ptr<IOfdmModulator> create_ofdm_modulator();
-extern std::unique_ptr<IEqualizer> create_mmse_equalizer();
-extern std::unique_ptr<IChannelEstimator> create_ls_channel_estimator();
 
 namespace {
 
 constexpr int DMRS_SYMBOL = 2;
 constexpr int NUM_SYMBOLS_PER_SLOT = 14;
-
-int get_ldpc_encoded_length(int bgn, int zc) {
-    constexpr int BG1_K_B = 22;
-    constexpr int BG2_K_B = 10;
-    constexpr int N_CHECKS = 15;
-    int k_b = (bgn == 1) ? BG1_K_B : BG2_K_B;
-    return (k_b + N_CHECKS) * zc;
-}
 
 static bool is_dmrs_symbol(int sym) {
     return sym == DMRS_SYMBOL;
@@ -44,6 +25,16 @@ int count_pdsch_re(int n_rb) {
     for (int sym = 0; sym < NUM_SYMBOLS_PER_SLOT; sym++) {
         if (!is_dmrs_symbol(sym)) {
             count += n_rb * 12;
+        }
+    }
+    return count;
+}
+
+int count_pdsch_re_per_prb() {
+    int count = 0;
+    for (int sym = 0; sym < NUM_SYMBOLS_PER_SLOT; sym++) {
+        if (!is_dmrs_symbol(sym)) {
+            count += 12;
         }
     }
     return count;
@@ -130,8 +121,9 @@ ComplexCube extract_channel_at_pdsch(const ComplexCube& h_est,
         if (is_dmrs_symbol(sym)) {
             continue;
         }
-        if (sym >= n_sym) {
-            sym = n_sym - 1;
+        int sym_use = sym;
+        if (sym_use >= n_sym) {
+            sym_use = n_sym - 1;
         }
 
         for (int rb = 0; rb < n_rb; rb++) {
@@ -145,7 +137,7 @@ ComplexCube extract_channel_at_pdsch(const ComplexCube& h_est,
                 }
 
                 for (int c = 0; c < n_ch; c++) {
-                    h_at_pdsch(re_idx, 0, c) = h_est(sc, sym, c);
+                    h_at_pdsch(re_idx, 0, c) = h_est(sc, sym_use, c);
                 }
                 re_idx++;
             }
@@ -155,7 +147,7 @@ ComplexCube extract_channel_at_pdsch(const ComplexCube& h_est,
     return h_at_pdsch;
 }
 
-} // anonymous namespace
+}
 
 PdschProcessor::PdschProcessor(const SimulationConfig& config)
     : config_(config), seed_(config.random_seed), rng_(config.random_seed) {
@@ -165,6 +157,11 @@ PdschProcessor::PdschProcessor(const SimulationConfig& config)
     config_.n_tx_ant = std::min(config_.n_tx_ant, 2);
     config_.n_layers = std::min(config_.n_layers, config_.n_tx_ant);
     config_.n_rx_ant = std::min(config_.n_rx_ant, config_.n_tx_ant > 1 ? 4 : 1);
+
+    if (config_.mcs_index >= 0 && config_.mcs_index <= MAX_MCS_INDEX) {
+        config_.mod_scheme = mcs_to_modulation(config_.mcs_index);
+        config_.code_rate = mcs_to_code_rate(config_.mcs_index);
+    }
 
     pdsch_sym_alloc_.start = 0;
     pdsch_sym_alloc_.length = NUM_SYMBOLS_PER_SLOT;
@@ -220,12 +217,12 @@ ComplexMat PdschProcessor::get_identity_precoding_matrix() {
 }
 
 TransportBlock PdschProcessor::generate_transport_block() {
-    int pdsch_re_count = calculate_pdsch_capacity();
-    int bits_per_sym = mod_to_bits_per_symbol(config_.mod_scheme);
+    int n_re_per_prb = count_pdsch_re_per_prb();
+    int qm = mcs_to_bits_per_symbol(config_.mcs_index);
+    double target_coderate = mcs_to_code_rate(config_.mcs_index);
     int n_layers = config_.n_layers;
-    int tbs = static_cast<int>((pdsch_re_count * n_layers * bits_per_sym * config_.code_rate) / 8) * 8;
-    tbs = std::max(tbs, 24);
-    tbs = std::min(tbs, pdsch_re_count * n_layers * bits_per_sym - 32);
+    
+    int tbs = calculate_tbs(n_pdsch_rbs_, n_re_per_prb, qm, n_layers, target_coderate);
 
     TransportBlock tb(tbs);
     tb.mcs = config_.mcs_index;
@@ -246,15 +243,21 @@ PdschTxResult PdschProcessor::transmit(const TransportBlock& tb, int slot_idx) {
     BitVec bits_with_crc = crc_encoder_->encode(tb.bits, crc_len);
     result.tb_bits_after_crc = bits_with_crc;
 
-    LdpcBaseGraphInfo ldpc_info = select_ldpc_params(tb.tb_size, config_.code_rate);
+    int k_info = static_cast<int>(bits_with_crc.size());
+    double target_coderate = mcs_to_code_rate(config_.mcs_index);
+    LdpcParams ldpc_info = select_ldpc_params(k_info, target_coderate);
     result.bgn = ldpc_info.bgn;
     result.zc = ldpc_info.zc;
 
-    BitVec coded_bits = ldpc_encoder_->encode(bits_with_crc, ldpc_info.bgn, ldpc_info.zc);
+    BitVec coded_bits_full = ldpc_encoder_->encode(bits_with_crc, ldpc_info.bgn, ldpc_info.zc);
 
-    int bits_per_sym = mod_to_bits_per_symbol(config_.mod_scheme);
-    int pdsch_re_count = calculate_pdsch_capacity();
-    int E = pdsch_re_count * n_layers * bits_per_sym;
+    int n_punctured = 2 * ldpc_info.zc;
+    int N_cb = ldpc_info.n - n_punctured;
+    BitVec coded_bits(coded_bits_full.begin() + n_punctured, coded_bits_full.end());
+
+    int qm = mcs_to_bits_per_symbol(config_.mcs_index);
+    int n_re_per_prb = count_pdsch_re_per_prb();
+    int E = calculate_num_coded_bits(n_pdsch_rbs_, n_re_per_prb, qm, n_layers);
     result.n_coded_bits = E;
 
     BitVec rm_bits = rate_matcher_->rate_match(coded_bits, E, tb.rv, ldpc_info.bgn, ldpc_info.zc);
@@ -373,13 +376,14 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
 
     SoftVec descrambled = scrambler_->descramble(llr, tx_info.scrambling_seed);
 
-    int N = get_ldpc_encoded_length(tx_info.bgn, tx_info.zc);
-    SoftVec recovered = rate_matcher_->rate_recover(descrambled, N, 0, tx_info.bgn, tx_info.zc);
+    int n_punctured = 2 * tx_info.zc;
+    int N_cb = (tx_info.bgn == 1 ? 68 : 52) * tx_info.zc - n_punctured;
+    SoftVec recovered = rate_matcher_->rate_recover(descrambled, N_cb, 0, tx_info.bgn, tx_info.zc);
 
-    auto [decoded_bits, _] = ldpc_decoder_->decode(recovered, tx_info.bgn, tx_info.zc,
+    auto [decoded_bits, conv_ok] = ldpc_decoder_->decode(recovered, tx_info.bgn, tx_info.zc,
                                                       config_.n_ldpc_iterations,
                                                       config_.early_termination);
-    (void)_;
+    (void)conv_ok;
 
     result.crc_ok = false;
     result.decoded_bits = BitVec();
@@ -387,11 +391,8 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
     int crc_len = get_crc_length(tx_info.n_info_bits);
     int total_len = tx_info.n_info_bits + crc_len;
 
-    if (static_cast<int>(decoded_bits.n_elem) >= total_len) {
-        BitVec rx_bits(total_len);
-        for (int i = 0; i < total_len; i++) {
-            rx_bits(i) = decoded_bits(i);
-        }
+    if (static_cast<int>(decoded_bits.size()) >= total_len) {
+        BitVec rx_bits(decoded_bits.begin(), decoded_bits.begin() + total_len);
         auto [info_bits, check_ok] = crc_encoder_->decode(rx_bits, crc_len);
         result.decoded_bits = info_bits;
         result.crc_ok = check_ok;
@@ -416,28 +417,86 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
 
     int n_sc = n_pdsch_rbs_ * 12;
     int n_sym = get_symbols_per_slot();
-    int fft_size = get_fft_size(n_pdsch_rbs_, config_.scs);
-    double sample_rate = config_.scs * static_cast<double>(fft_size);
+
+    bool fast_awgn = (config_.channel_type == ChannelType::AWGN &&
+                      config_.n_tx_ant == 1 && config_.n_rx_ant == 1 && config_.n_layers == 1);
+
+    double sinr_lin = std::pow(10.0, sinr_db / 10.0);
+    double noise_var = 1.0 / sinr_lin;
+    double sigma_dim = std::sqrt(noise_var / 2.0);
+    std::mt19937 local_rng(seed_);
 
     for (int block = 0; block < config_.max_blocks_per_sinr; block++) {
         TransportBlock tb = generate_transport_block();
-
         PdschTxResult tx_res = transmit(tb, block);
 
-        ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
+        PdschRxResult rx_res;
 
-        ComplexVec rx_signal = channel_model_->apply_channel(tx_res.tx_signal, h);
-        double bandwidth = static_cast<double>(n_pdsch_rbs_) * 12.0 * config_.scs;
-        double noise_var = channel_model_->get_thermal_noise(sinr_db, bandwidth, 5.0);
-        rx_signal = channel_model_->add_noise(rx_signal, noise_var);
+        if (fast_awgn) {
+            ResourceGrid rx_grid = tx_res.tx_grid;
+            std::normal_distribution<double> nd(0.0, sigma_dim);
+            for (int ant = 0; ant < rx_grid.n_ant; ant++) {
+                for (int sym = 0; sym < rx_grid.n_symbols; sym++) {
+                    for (int sc = 0; sc < rx_grid.n_subcarriers; sc++) {
+                        Complex val = rx_grid.get_re(ant, sym, sc);
+                        double nr = nd(local_rng);
+                        double ni = nd(local_rng);
+                        rx_grid.set_re(ant, sym, sc, val + Complex(nr, ni));
+                    }
+                }
+            }
 
-        int n_rx_ant = ch_config.n_rx_ant;
-        ResourceGrid demod_grid = ofdm_modulator_->demodulate(rx_signal, n_rx_ant,
-                                                              config_.scs, n_sym);
+            rx_res.crc_ok = false;
+            int n_layers = 1;
 
-        ResourceGrid rx_grid = fix_ofdm_demod_grid(demod_grid, n_rx_ant, n_sym, n_sc);
+            ComplexMat rx_pdsch = extract_pdsch_from_grid(rx_grid, 0, n_pdsch_rbs_);
 
-        PdschRxResult rx_res = receive(rx_grid, tx_res, sinr_db, block);
+            ComplexVec rx_symbols(rx_pdsch.n_rows);
+            for (int i = 0; i < (int)rx_pdsch.n_rows; i++) {
+                rx_symbols(i) = rx_pdsch(i, 0);
+            }
+
+            SoftVec llr = modulator_->demodulate(rx_symbols, config_.mod_scheme, noise_var);
+
+            SoftVec descrambled = scrambler_->descramble(llr, tx_res.scrambling_seed);
+
+            int n_punctured = 2 * tx_res.zc;
+            int N_cb = (tx_res.bgn == 1 ? 68 : 52) * tx_res.zc - n_punctured;
+            SoftVec recovered = rate_matcher_->rate_recover(descrambled, N_cb, 0, tx_res.bgn, tx_res.zc);
+
+            auto [decoded_bits, conv_ok] = ldpc_decoder_->decode(recovered, tx_res.bgn, tx_res.zc,
+                                                              config_.n_ldpc_iterations,
+                                                              config_.early_termination);
+            (void)conv_ok;
+
+            int crc_len = get_crc_length(tx_res.n_info_bits);
+            int total_len = tx_res.n_info_bits + crc_len;
+
+            if ((int)decoded_bits.size() >= total_len) {
+                BitVec rx_bits(decoded_bits.begin(), decoded_bits.begin() + total_len);
+                auto [info_bits, check_ok] = crc_encoder_->decode(rx_bits, crc_len);
+                rx_res.decoded_bits = info_bits;
+                rx_res.crc_ok = check_ok;
+            }
+            rx_res.sinr_est = sinr_db;
+            rx_res.noise_var_est = noise_var;
+        } else {
+            int fft_size = get_fft_size(n_pdsch_rbs_, config_.scs);
+            double sample_rate = config_.scs * static_cast<double>(fft_size);
+
+            ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
+            ComplexVec rx_signal = channel_model_->apply_channel(tx_res.tx_signal, h);
+
+            double sig_pwr = arma::mean(arma::real(tx_res.tx_signal % arma::conj(tx_res.tx_signal)));
+            double noise_var_slow = sig_pwr / sinr_lin;
+            rx_signal = channel_model_->add_noise(rx_signal, noise_var_slow);
+
+            int n_rx_ant = ch_config.n_rx_ant;
+            ResourceGrid demod_grid = ofdm_modulator_->demodulate(rx_signal, n_rx_ant,
+                                                                  config_.scs, n_sym);
+            ResourceGrid rx_grid = fix_ofdm_demod_grid(demod_grid, n_rx_ant, n_sym, n_sc);
+            rx_res = receive(rx_grid, tx_res, sinr_db, block);
+        }
 
         result.n_blocks++;
         if (!rx_res.crc_ok) {
@@ -451,6 +510,7 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
         }
     }
 
+    seed_ = local_rng();
     return result.n_errors >= config_.target_block_errors;
 }
 
@@ -491,5 +551,5 @@ std::vector<BlerResult> run_bler_simulation(const SimulationConfig& config,
     return results;
 }
 
-} // namespace phy
-} // namespace nr
+}
+}

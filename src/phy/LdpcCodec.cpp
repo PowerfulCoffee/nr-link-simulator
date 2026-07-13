@@ -1,49 +1,156 @@
 #include "phy/PhyInterfaces.h"
-#include "common/NrTables.h"
+#include "phy/LdpcTables.h"
 #include <cmath>
-#include <vector>
-#include <array>
 #include <algorithm>
-#include <limits>
+#include <stdexcept>
+#include <vector>
+#include <utility>
+#include <bitset>
+#include <unordered_map>
+#include <memory>
 
 namespace nr {
 namespace phy {
 
+using namespace nr::ldpc;
+
 namespace {
 
-constexpr int BG1_K_B = 22;
-constexpr int BG1_CORE_COLS = BG1_K_B + 4;
-constexpr int BG1_N_COLS_TOTAL = 68;
-
-constexpr int BG2_K_B = 10;
-constexpr int BG2_CORE_COLS = BG2_K_B + 4;
-constexpr int BG2_N_COLS_TOTAL = 52;
-
-constexpr int BG1_CORE_ROWS = 4;
-
-constexpr int BG1_CORE_SHIFT[BG1_CORE_ROWS][BG1_CORE_COLS] = {
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0}
-};
-
-constexpr int BG2_CORE_SHIFT[BG1_CORE_ROWS][BG2_CORE_COLS] = {
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0}
-};
-
-inline int mod_positive(int a, int zc) {
-    int r = a % zc;
-    return r < 0 ? r + zc : r;
+int find_zc_set(int zc) {
+    for (int s = 0; s < 8; s++) {
+        int len = ZC_SET_LENGTHS[s];
+        for (int i = 0; i < len; i++) {
+            if (ZC_SETS[s][i] == zc) return s;
+        }
+    }
+    return 0;
 }
 
-void circ_xor_accum(const uint8_t* src, uint8_t* dst, int shift, int zc) {
-    for (int i = 0; i < zc; i++) {
-        dst[i] ^= src[mod_positive(i - shift, zc)];
+int get_bg_shift(int bgn, int set_idx, int row, int col) {
+    if (bgn == 1) {
+        return BG1_SHIFTS[set_idx][row][col];
+    } else {
+        return BG2_SHIFTS[set_idx][row][col];
     }
+}
+
+struct LdpcDims {
+    int rows;
+    int cols;
+    int n_sys;
+    int N;
+    int K;
+};
+
+LdpcDims get_dims(int bgn, int zc) {
+    LdpcDims d;
+    if (bgn == 1) {
+        d.rows = 46;
+        d.cols = 68;
+    } else {
+        d.rows = 42;
+        d.cols = 52;
+    }
+    d.n_sys = d.cols - d.rows;
+    d.N = d.cols * zc;
+    d.K = d.n_sys * zc;
+    return d;
+}
+
+struct Edge {
+    int col;
+    int shift;
+};
+
+std::vector<std::vector<Edge>> build_edges(int bgn, int zc) {
+    auto d = get_dims(bgn, zc);
+    int set_idx = find_zc_set(zc);
+    std::vector<std::vector<Edge>> edges(d.rows);
+    for (int i = 0; i < d.rows; i++) {
+        for (int j = 0; j < d.cols; j++) {
+            int sh = get_bg_shift(bgn, set_idx, i, j);
+            if (sh >= 0) {
+                int sh_mod = sh % zc;
+                if (sh_mod < 0) sh_mod += zc;
+                edges[i].push_back({j, sh_mod});
+            }
+        }
+    }
+    return edges;
+}
+
+struct CheckToVarEdge {
+    int var_node;
+};
+
+struct VarToCheckEdge {
+    int check_node;
+    int edge_idx;
+};
+
+struct LdpcGraph {
+    int M;
+    int N;
+    int K;
+    int zc;
+    int bgn;
+    int total_edges;
+    
+    std::vector<int> check_edge_offset;
+    std::vector<std::vector<CheckToVarEdge>> check_edges;
+    std::vector<std::vector<VarToCheckEdge>> var_edges;
+    std::vector<std::vector<int>> parity_check_edges;
+};
+
+std::shared_ptr<LdpcGraph> build_graph(int bgn, int zc) {
+    static std::unordered_map<uint64_t, std::shared_ptr<LdpcGraph>> cache;
+    uint64_t key = (static_cast<uint64_t>(bgn) << 32) | static_cast<uint32_t>(zc);
+    auto it = cache.find(key);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    
+    auto d = get_dims(bgn, zc);
+    auto bg_edges = build_edges(bgn, zc);
+    
+    auto g = std::make_shared<LdpcGraph>();
+    g->M = d.rows * zc;
+    g->N = d.N;
+    g->K = d.K;
+    g->zc = zc;
+    g->bgn = bgn;
+    g->check_edge_offset.resize(g->M + 1, 0);
+    g->check_edges.resize(g->M);
+    g->var_edges.resize(g->N);
+    g->parity_check_edges.resize(g->M);
+    
+    for (int i = 0; i < d.rows; i++) {
+        for (int l = 0; l < zc; l++) {
+            int cnode = i * zc + l;
+            for (size_t e = 0; e < bg_edges[i].size(); e++) {
+                int j = bg_edges[i][e].col;
+                int sh = bg_edges[i][e].shift;
+                int vnode = j * zc + ((l + sh) % zc);
+                g->check_edges[cnode].push_back({vnode});
+                g->parity_check_edges[cnode].push_back(vnode);
+            }
+        }
+    }
+    
+    g->total_edges = 0;
+    for (int i = 0; i < g->M; i++) {
+        g->check_edge_offset[i] = g->total_edges;
+        int deg = (int)g->check_edges[i].size();
+        for (int e = 0; e < deg; e++) {
+            int vnode = g->check_edges[i][e].var_node;
+            g->var_edges[vnode].push_back({i, g->total_edges + e});
+        }
+        g->total_edges += deg;
+    }
+    g->check_edge_offset[g->M] = g->total_edges;
+    
+    cache[key] = g;
+    return g;
 }
 
 }
@@ -51,231 +158,241 @@ void circ_xor_accum(const uint8_t* src, uint8_t* dst, int shift, int zc) {
 class LdpcEncoderImpl : public ILdpcEncoder {
 public:
     BitVec encode(const BitVec& info_bits, int bgn, int zc) override {
-        int k_b = (bgn == 1) ? BG1_K_B : BG2_K_B;
-        int n_core_checks = 4;
-        int n_total_cols = (bgn == 1) ? BG1_N_COLS_TOTAL : BG2_N_COLS_TOTAL;
-        int n_coded = (n_total_cols - 2) * zc;
-        int k_total = k_b * zc;
-        
-        int n_checks_max = std::min(15, n_total_cols - k_b);
-        
-        BitVec codeword(k_total + n_checks_max * zc, arma::fill::zeros);
-        
-        int info_len = std::min((int)info_bits.n_elem, k_total);
-        for (int i = 0; i < info_len; i++) {
-            codeword(i) = info_bits(i);
+        auto d = get_dims(bgn, zc);
+        auto edges = build_edges(bgn, zc);
+
+        if ((int)info_bits.size() > d.K) {
+            throw std::runtime_error("info_bits too long for given zc/bgn");
         }
-        
-        uint8_t* p0 = codeword.memptr() + k_b * zc;
-        uint8_t* p1 = p0 + zc;
-        uint8_t* p2 = p1 + zc;
-        uint8_t* p3 = p2 + zc;
-        
-        BitVec temp(zc, arma::fill::zeros);
-        
-        for (int col = 0; col < k_b; col++) {
-            const uint8_t* col_ptr = codeword.memptr() + col * zc;
-            circ_xor_accum(col_ptr, temp.memptr(), 0, zc);
+
+        BitVec cw(d.N, 0);
+        int n_info = (int)info_bits.size();
+        for (int i = 0; i < n_info; i++) {
+            cw[i] = info_bits[i];
         }
-        for (int i = 0; i < zc; i++) {
-            p0[i] = temp(i);
-        }
-        
-        temp.zeros();
-        circ_xor_accum(p0, temp.memptr(), 0, zc);
-        for (int col = 0; col < k_b; col++) {
-            const uint8_t* col_ptr = codeword.memptr() + col * zc;
-            circ_xor_accum(col_ptr, temp.memptr(), 0, zc);
-        }
-        for (int i = 0; i < zc; i++) {
-            p1[i] = temp(i);
-        }
-        
-        temp.zeros();
-        circ_xor_accum(p1, temp.memptr(), 0, zc);
-        for (int col = 0; col < k_b; col++) {
-            const uint8_t* col_ptr = codeword.memptr() + col * zc;
-            circ_xor_accum(col_ptr, temp.memptr(), 0, zc);
-        }
-        for (int i = 0; i < zc; i++) {
-            p2[i] = temp(i);
-        }
-        
-        temp.zeros();
-        circ_xor_accum(p2, temp.memptr(), 0, zc);
-        for (int col = 0; col < k_b; col++) {
-            const uint8_t* col_ptr = codeword.memptr() + col * zc;
-            circ_xor_accum(col_ptr, temp.memptr(), 0, zc);
-        }
-        for (int i = 0; i < zc; i++) {
-            p3[i] = temp(i);
-        }
-        
-        for (int row_ext = 0; row_ext < n_checks_max - 4; row_ext++) {
-            uint8_t* p_ext = codeword.memptr() + k_b * zc + (4 + row_ext) * zc;
-            temp.zeros();
-            
-            uint8_t* prev_p = p3;
-            if (row_ext > 0) {
-                prev_p = codeword.memptr() + k_b * zc + (3 + row_ext) * zc;
-            }
-            for (int i = 0; i < zc; i++) {
-                temp(i) ^= prev_p[i];
-            }
-            
-            for (int col = 0; col < k_b; col++) {
-                const uint8_t* col_ptr = codeword.memptr() + col * zc;
-                circ_xor_accum(col_ptr, temp.memptr(), 0, zc);
-            }
-            
-            for (int i = 0; i < zc; i++) {
-                p_ext[i] = temp(i);
+
+        int Np = d.rows * zc;
+        int Ncore = 4 * zc;
+        std::vector<uint8_t> p(Np, 0);
+
+        std::vector<uint8_t> phi(Np, 0);
+        for (int i = 0; i < d.rows; i++) {
+            for (const auto& e : edges[i]) {
+                if (e.col < d.n_sys) {
+                    for (int l = 0; l < zc; l++) {
+                        phi[i * zc + l] ^= cw[e.col * zc + ((l + e.shift) % zc)];
+                    }
+                }
             }
         }
-        
-        int out_len = std::min(n_coded, (int)codeword.n_elem);
-        BitVec output(out_len, arma::fill::zeros);
-        for (int i = 0; i < out_len; i++) {
-            output(i) = codeword(i);
+
+        {
+            int nvar = Ncore;
+            std::vector<std::vector<int>> mat(nvar);
+            std::vector<uint8_t> rhs(nvar, 0);
+
+            for (int i = 0; i < 4; i++) {
+                for (int l = 0; l < zc; l++) {
+                    int row = i * zc + l;
+                    rhs[row] = phi[row];
+                    for (const auto& e : edges[i]) {
+                        if (e.col >= d.n_sys) {
+                            int pt = e.col - d.n_sys;
+                            if (pt < 4) {
+                                int col = pt * zc + ((l + e.shift) % zc);
+                                mat[row].push_back(col);
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::vector<int> pivot_col(nvar, -1);
+            int r = 0;
+            for (int c = 0; c < nvar && r < nvar; c++) {
+                int pr = -1;
+                for (int rr = r; rr < nvar; rr++) {
+                    for (int cc : mat[rr]) {
+                        if (cc == c) { pr = rr; break; }
+                    }
+                    if (pr >= 0) break;
+                }
+                if (pr == -1) continue;
+                std::swap(mat[r], mat[pr]);
+                std::swap(rhs[r], rhs[pr]);
+                pivot_col[r] = c;
+
+                for (int rr = 0; rr < nvar; rr++) {
+                    if (rr == r) continue;
+                    bool has = false;
+                    for (int cc : mat[rr]) {
+                        if (cc == c) { has = true; break; }
+                    }
+                    if (has) {
+                        int i1 = 0, i2 = 0;
+                        std::vector<int> new_mat;
+                        while (i1 < (int)mat[r].size() && i2 < (int)mat[rr].size()) {
+                            if (mat[r][i1] < mat[rr][i2]) { new_mat.push_back(mat[r][i1++]); }
+                            else if (mat[r][i1] > mat[rr][i2]) { new_mat.push_back(mat[rr][i2++]); }
+                            else { i1++; i2++; }
+                        }
+                        while (i1 < (int)mat[r].size()) new_mat.push_back(mat[r][i1++]);
+                        while (i2 < (int)mat[rr].size()) new_mat.push_back(mat[rr][i2++]);
+                        mat[rr] = std::move(new_mat);
+                        rhs[rr] ^= rhs[r];
+                    }
+                }
+                r++;
+            }
+
+            for (int rr = 0; rr < nvar; rr++) {
+                if (pivot_col[rr] >= 0) {
+                    int c = pivot_col[rr];
+                    p[c] = rhs[rr];
+                }
+            }
         }
-        
-        return output;
+
+        for (int i = 0; i < 4; i++) {
+            for (int l = 0; l < zc; l++) {
+                cw[d.K + i * zc + l] = p[i * zc + l];
+            }
+        }
+
+        for (int i = 4; i < d.rows; i++) {
+            for (int l = 0; l < zc; l++) {
+                uint8_t val = phi[i * zc + l];
+                for (const auto& e : edges[i]) {
+                    if (e.col >= d.n_sys) {
+                        int pt = e.col - d.n_sys;
+                        if (pt != i) {
+                            val ^= cw[d.K + pt * zc + ((l + e.shift) % zc)];
+                        }
+                    }
+                }
+                cw[d.K + i * zc + l] = val;
+            }
+        }
+
+        return cw;
     }
 };
 
 class LdpcDecoderImpl : public ILdpcDecoder {
+    mutable std::vector<double> msg_c2v_;
+    mutable std::vector<double> msg_v2c_;
+    mutable std::vector<double> ch_llr_;
+    mutable std::vector<double> post_;
+    
 public:
     std::pair<BitVec, bool> decode(const SoftVec& llr_in, int bgn, int zc,
                                    int n_iter, bool early_term) override {
-        int k_b = (bgn == 1) ? BG1_K_B : BG2_K_B;
-        int n_total_cols = (bgn == 1) ? BG1_N_COLS_TOTAL : BG2_N_COLS_TOTAL;
-        int n_rows = std::min(15, n_total_cols - k_b);
-        int k_total = k_b * zc;
+        auto graph = build_graph(bgn, zc);
+        int M = graph->M;
+        int N = graph->N;
+        int K = graph->K;
+        int E = graph->total_edges;
         
-        SoftVec app(n_total_cols * zc, arma::fill::zeros);
+        ch_llr_.assign(N, 0.0);
+        post_.assign(N, 0.0);
+        msg_c2v_.assign(E, 0.0);
+        msg_v2c_.assign(E, 0.0);
         
-        int copy_len = std::min((int)llr_in.n_elem, k_total + n_rows * zc);
-        for (int i = 0; i < copy_len; i++) {
-            app(i) = llr_in(i);
+        int n_pcb = 2 * zc;
+        int in_len = (int)llr_in.size();
+
+        if (in_len == N - n_pcb) {
+            for (int i = 0; i < in_len; i++) {
+                ch_llr_[n_pcb + i] = llr_in[i];
+                post_[n_pcb + i] = llr_in[i];
+            }
+        } else if (in_len >= N) {
+            for (int i = 0; i < N; i++) {
+                ch_llr_[i] = llr_in[i];
+                post_[i] = llr_in[i];
+            }
+        } else {
+            for (int i = 0; i < in_len; i++) {
+                ch_llr_[i] = llr_in[i];
+                post_[i] = llr_in[i];
+            }
         }
-        
-        SoftVec msg_c2v(n_rows * zc, arma::fill::zeros);
-        
-        double norm_factor = 0.75;
+
+        const double offset = 0.5;
         bool converged = false;
-        
+
         for (int iter = 0; iter < n_iter; iter++) {
-            for (int row = 0; row < n_rows; row++) {
-                std::vector<std::pair<int, int>> edges;
-                
-                for (int col = 0; col < k_b; col++) {
-                    edges.emplace_back(col, 0);
-                }
-                edges.emplace_back(k_b + row, 0);
-                if (row > 0) {
-                    edges.emplace_back(k_b + row - 1, 0);
-                }
-                
-                int n_edges = edges.size();
-                std::vector<SoftVec> var_msgs(n_edges, SoftVec(zc));
-                
-                for (int e = 0; e < n_edges; e++) {
-                    int col = edges[e].first;
-                    int shift = edges[e].second;
-                    const double* app_ptr = app.memptr() + col * zc;
-                    const double* old_c2v = msg_c2v.memptr() + row * zc;
-                    
-                    for (int i = 0; i < zc; i++) {
-                        int src_i = mod_positive(i - shift, zc);
-                        var_msgs[e](i) = app_ptr[src_i] - old_c2v[src_i];
-                    }
-                }
-                
-                SoftVec new_c2v(zc, arma::fill::zeros);
-                for (int i = 0; i < zc; i++) {
-                    double min1 = std::numeric_limits<double>::infinity();
-                    double min2 = std::numeric_limits<double>::infinity();
-                    int sign_prod = 1;
-                    int min_idx = -1;
-                    
-                    for (int e = 0; e < n_edges; e++) {
-                        double v = var_msgs[e](i);
-                        double mag = std::abs(v);
-                        int sgn = (v >= 0) ? 1 : -1;
-                        sign_prod *= sgn;
-                        
-                        if (mag < min1) {
-                            min2 = min1;
-                            min1 = mag;
-                            min_idx = e;
-                        } else if (mag < min2) {
-                            min2 = mag;
-                        }
-                    }
-                    
-                    for (int e = 0; e < n_edges; e++) {
-                        double out_mag = (e == min_idx) ? min2 : min1;
-                        double v = var_msgs[e](i);
-                        int sgn = (v >= 0) ? 1 : -1;
-                        int out_sgn = sign_prod * sgn;
-                        var_msgs[e](i) = out_sgn * out_mag * norm_factor;
-                    }
-                }
-                
-                for (int e = 0; e < n_edges; e++) {
-                    int col = edges[e].first;
-                    int shift = edges[e].second;
-                    double* app_ptr = app.memptr() + col * zc;
-                    double* c2v_ptr = msg_c2v.memptr() + row * zc;
-                    
-                    for (int i = 0; i < zc; i++) {
-                        int dst_i = mod_positive(i - shift, zc);
-                        c2v_ptr[dst_i] = var_msgs[e](i);
-                        app_ptr[dst_i] += c2v_ptr[dst_i];
-                    }
+            for (int v = 0; v < N; v++) {
+                double post_v = post_[v];
+                for (const auto& edge : graph->var_edges[v]) {
+                    int eidx = edge.edge_idx;
+                    msg_v2c_[eidx] = post_v - msg_c2v_[eidx];
                 }
             }
-            
+
+            for (int i = 0; i < M; i++) {
+                int deg = (int)graph->check_edges[i].size();
+                if (deg == 0) continue;
+                
+                int base = graph->check_edge_offset[i];
+                
+                double min1 = 1e10, min2 = 1e10;
+                int sgn_prod = 1;
+                for (int e = 0; e < deg; e++) {
+                    double val = msg_v2c_[base + e];
+                    double a = std::fabs(val);
+                    int s = (val >= 0) ? 1 : -1;
+                    sgn_prod *= s;
+                    if (a < min1) {
+                        min2 = min1;
+                        min1 = a;
+                    } else if (a < min2) {
+                        min2 = a;
+                    }
+                }
+                
+                for (int e = 0; e < deg; e++) {
+                    double val = msg_v2c_[base + e];
+                    double a = std::fabs(val);
+                    int s = (val >= 0) ? 1 : -1;
+                    double res_mag;
+                    if (std::fabs(a - min1) < 1e-12) {
+                        res_mag = std::max(0.0, min2 - offset);
+                    } else {
+                        res_mag = std::max(0.0, min1 - offset);
+                    }
+                    int res_sgn = sgn_prod * s;
+                    msg_c2v_[base + e] = res_sgn * res_mag;
+                }
+            }
+
+            for (int v = 0; v < N; v++) {
+                double sum = ch_llr_[v];
+                for (const auto& edge : graph->var_edges[v]) {
+                    sum += msg_c2v_[edge.edge_idx];
+                }
+                post_[v] = sum;
+            }
+
             if (early_term) {
-                bool syndrome_ok = true;
-                BitVec hard(k_total + 4 * zc);
-                for (int i = 0; i < k_total + 4 * zc; i++) {
-                    hard(i) = (app(i) < 0) ? 1 : 0;
-                }
-                
-                for (int row = 0; row < 4; row++) {
-                    for (int i = 0; i < zc; i++) {
-                        uint8_t parity = 0;
-                        for (int col = 0; col < k_b; col++) {
-                            parity ^= hard(col * zc + i);
-                        }
-                        parity ^= hard(k_b * zc + i);
-                        if (row > 0) {
-                            parity ^= hard(k_b * zc + (row - 1) * zc + i);
-                        }
-                        parity ^= hard(k_b * zc + row * zc + i);
-                        
-                        if (parity != 0) {
-                            syndrome_ok = false;
-                            break;
-                        }
+                bool ok = true;
+                for (int i = 0; i < M; i++) {
+                    uint8_t par = 0;
+                    for (int v : graph->parity_check_edges[i]) {
+                        par ^= (post_[v] < 0) ? 1 : 0;
                     }
-                    if (!syndrome_ok) break;
+                    if (par != 0) { ok = false; break; }
                 }
-                
-                if (syndrome_ok) {
-                    converged = true;
-                    break;
-                }
+                if (ok) { converged = true; break; }
             }
         }
-        
-        BitVec decoded(k_total, arma::fill::zeros);
-        for (int i = 0; i < k_total; i++) {
-            decoded(i) = (app(i) < 0) ? 1 : 0;
+
+        BitVec info_out(K);
+        for (int i = 0; i < K; i++) {
+            info_out[i] = (post_[i] < 0) ? 1 : 0;
         }
-        
-        return {decoded, converged};
+
+        return {info_out, converged};
     }
 };
 

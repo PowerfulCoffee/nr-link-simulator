@@ -1,6 +1,7 @@
 #include "phy/PhyInterfaces.h"
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 namespace nr {
 namespace phy {
@@ -9,16 +10,14 @@ class RateMatcherImpl : public IRateMatcher {
 public:
     BitVec rate_match(const BitVec& coded_bits, int E, int rv, int bgn, int zc) override {
         (void)bgn;
-        (void)zc;
-        int N = static_cast<int>(coded_bits.n_elem);
-        int N_cb = N;
-        int k0 = calculate_k0(rv, N_cb);
+        int N_cb = static_cast<int>(coded_bits.size());
+        int k0 = calculate_k0(rv, N_cb, zc);
 
         BitVec matched(E);
         for (int i = 0; i < E; i++) {
             int idx = (k0 + i) % N_cb;
             if (idx < 0) idx += N_cb;
-            matched(i) = coded_bits(idx);
+            matched[i] = coded_bits[idx];
         }
 
         return matched;
@@ -26,18 +25,17 @@ public:
 
     SoftVec rate_recover(const SoftVec& llr, int N, int rv, int bgn, int zc) override {
         (void)bgn;
-        (void)zc;
-        int E = static_cast<int>(llr.n_elem);
+        int E = static_cast<int>(llr.size());
         int N_cb = N;
 
-        SoftVec recovered(N, arma::fill::zeros);
-        int k0 = calculate_k0(rv, N_cb);
+        SoftVec recovered(N_cb, 0.0);
+        int k0 = calculate_k0(rv, N_cb, zc);
 
         for (int i = 0; i < E; i++) {
             int idx = (k0 + i) % N_cb;
             if (idx < 0) idx += N_cb;
-            if (idx >= 0 && idx < N) {
-                recovered(idx) += llr(i);
+            if (idx >= 0 && idx < N_cb) {
+                recovered[idx] += llr[i];
             }
         }
 
@@ -45,7 +43,9 @@ public:
     }
 
 private:
-    int calculate_k0(int rv, int N_cb) const {
+    int calculate_k0(int rv, int N_cb, int zc) const {
+        int Z = zc;
+        if (Z <= 0) Z = 1;
         switch (rv % 4) {
             case 0: return 0;
             case 1: return N_cb / 4;

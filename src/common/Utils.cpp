@@ -7,9 +7,9 @@ namespace nr {
 void TransportBlock::generate_random_bits(uint64_t seed) {
     std::mt19937 rng(seed);
     std::uniform_int_distribution<int> dist(0, 1);
-    bits.set_size(tb_size);
+    bits.resize(tb_size);
     for (int i = 0; i < tb_size; i++) {
-        bits(i) = dist(rng);
+        bits[i] = static_cast<Bit>(dist(rng));
     }
 }
 
@@ -34,5 +34,5 @@ std::pair<SoftBit, SoftBit> qpsk_demodulate(Complex sym, double noise_var) {
     return {sym.real() * scale * -2.0, sym.imag() * scale * -2.0};
 }
 
-} // namespace utils
-} // namespace nr
+}
+}

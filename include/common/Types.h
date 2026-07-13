@@ -25,8 +25,8 @@ using Cube = arma::Cube<T>;
 using ComplexVec = Vec<Complex>;
 using ComplexMat = Mat<Complex>;
 using ComplexCube = Cube<Complex>;
-using BitVec = Vec<Bit>;
-using SoftVec = Vec<SoftBit>;
+using BitVec = std::vector<Bit>;
+using SoftVec = std::vector<SoftBit>;
 
 enum class ChannelType {
     AWGN,
@@ -43,6 +43,7 @@ enum class ChannelType {
 };
 
 enum class ModulationScheme {
+    BPSK,
     QPSK,
     QAM16,
     QAM64,
@@ -90,7 +91,7 @@ struct SimulationConfig {
     int n_rx_ant = 4;
     int n_layers = 4;
     
-    ChannelType channel_type = ChannelType::TDL_A;
+    ChannelType channel_type = ChannelType::AWGN;
     double delay_spread = 30e-9;
     double max_doppler = 5.0;
     bool enable_los = false;
@@ -151,7 +152,7 @@ struct TransportBlock {
     bool crc_ok = false;
     
     TransportBlock() = default;
-    TransportBlock(int size) : tb_size(size), bits(size, arma::fill::zeros) {}
+    TransportBlock(int size) : tb_size(size), bits(size, 0) {}
     
     void generate_random_bits(uint64_t seed);
 };
