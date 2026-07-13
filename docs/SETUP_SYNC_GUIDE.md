@@ -252,17 +252,83 @@ git pull origin main
    - 跑大规模仿真（`--max-blocks 10000 --target-errors 200`）
    - 仿真结果 CSV 可以下载到本地用 Python 绘图
 
-### 4.3 在 TRAE Work 配置 GitHub 认证（支持云端 push）
+### 4.3 在 TRAE Work（云端沙箱）配置 GitHub 认证（支持云端 push）
 
-如果希望能直接在云端提交并 push 到 GitHub，需要配置 SSH key：
+> **重要提示**：TRAE Work 云端沙箱有网络出站限制——SSH 22端口和443端口的SSH出站连接都被防火墙阻断，仅HTTPS 443端口可用。因此不能用SSH key方式，必须使用 GitHub CLI（gh）+ HTTPS 设备码授权的方式认证。此方式已验证可用。
 
+#### 前提：gh CLI 已预装
+
+TRAE Work 环境已预装 GitHub CLI `gh`（可通过 `gh --version` 验证）。
+
+#### 认证步骤（约30秒）：
+
+1. **在 TRAE Work 终端启动认证流程**：
+   ```bash
+   gh auth login --hostname github.com --git-protocol https --web --scopes repo
+   ```
+
+2. 终端会输出类似内容：
+   ```
+   ! First copy your one-time code: XXXX-XXXX
+   Open this URL to continue in your web browser: https://github.com/login/device
+   ```
+
+3. **在你本地电脑的浏览器**中打开 https://github.com/login/device，登录GitHub账号后输入终端显示的一次性验证码，点击 Continue → Authorize github。
+
+4. 授权成功后，终端会显示：
+   ```
+   ✓ Authentication complete.
+   ✓ Configured git protocol
+   ✓ Logged in as 你的GitHub用户名
+   ```
+
+5. **配置 Git 使用 gh 作为凭证助手**（只需执行一次）：
+   ```bash
+   gh auth setup-git
+   ```
+
+6. **确保 remote 使用 HTTPS 协议**：
+   ```bash
+   git remote set-url origin https://github.com/你的用户名/nr-link-simulator.git
+   ```
+
+#### 认证完成后日常使用：
+
+配置完成后，在云端直接执行标准 Git 命令即可，gh 会自动处理认证，无需再次输入密码：
 ```bash
-# 在 TRAE Work 终端执行
-ssh-keygen -t ed25519 -C "trae-work" -f ~/.ssh/id_ed25519 -N ""
-cat ~/.ssh/id_ed25519.pub
+git add -A
+git commit -m "your commit message"
+git push origin main
+git pull origin main
 ```
 
-复制输出的公钥内容，打开 https://github.com/settings/keys 添加新 SSH key（Title 填 "TRAE Work Cloud"），之后就可以在云端正常执行 `git push` 了。
+#### 如果远程仓库已有内容（非空仓库），首次push处理冲突：
+
+如果远程仓库已经有初始化提交（如README），首次推送前需要先合并：
+```bash
+# 配置merge策略（只需一次）
+git config pull.rebase false
+
+# 拉取远程内容并合并，冲突时保留本地版本
+git pull origin main --allow-unrelated-histories -X ours --no-edit
+
+# 如果还有个别文件冲突，手动解决后：
+git checkout --ours <冲突文件路径>
+git add <冲突文件路径>
+git commit -m "Merge remote content"
+
+# 然后推送
+git push -u origin main
+```
+
+#### 为什么不用SSH Key？
+
+云端沙箱出站限制：
+- `ssh -T git@github.com` → 端口22超时
+- `ssh -T -p 443 git@ssh.github.com` → 端口443的SSH也超时
+- 仅 HTTPS (https://github.com) 的443端口放行
+
+因此SSH方式在沙箱中**不可用**，gh CLI + OAuth设备码授权是唯一顺畅方案。
 
 ---
 
@@ -353,7 +419,9 @@ cat ~/.ssh/id_ed25519.pub
 
 ## 常见问题
 
-1. **Push 被拒绝 (rejected)**：先执行 `git pull --rebase origin main`，解决冲突后再 push
-2. **合并冲突**：打开带有冲突标记的文件，手动解决 `&lt;&lt;&lt;&lt;&lt;&lt;&lt;` / `=======` / `&gt;&gt;&gt;&gt;&gt;&gt;&gt;` 标记的部分，然后 `git add 文件名` 再 `git rebase --continue`
+1. **Push 被拒绝 (rejected)**：首次push非空仓库用 `git pull origin main --allow-unrelated-histories -X ours`，之后用 `git pull --rebase origin main`，解决冲突后再 push
+2. **合并冲突**：打开带有冲突标记的文件，手动解决 `<<<<<<<` / `=======` / `>>>>>>>` 标记的部分，然后 `git add 文件名` 再提交；或用 `-X ours` 参数自动保留本地版本
 3. **编译找不到 armadillo**：Ubuntu/Debian 执行 `sudo apt install libarmadillo-dev`；macOS 执行 `brew install armadillo`
-4. **云端无法 push**：按 4.3 节配置 SSH key，或者把代码文件下载到本地后从本地 push
+4. **TRAE Work 云端无法 SSH 连接 GitHub**：这是沙箱网络限制（SSH 22/443端口出站被阻断），不是配置错误，请按 4.3 节使用 `gh auth login` 设备码方式认证（HTTPS 协议），不要尝试配置 SSH key
+5. **gh 认证过期**：如果云端push突然提示认证失败，重新执行一次 `gh auth login --hostname github.com --git-protocol https --web --scopes repo` 流程即可
+6. **快速命令参考表中的 cd build && ctest**：注意文档中写的是 `&amp;&amp;`，实际终端中应输入 `&&`（HTML转义显示问题）
