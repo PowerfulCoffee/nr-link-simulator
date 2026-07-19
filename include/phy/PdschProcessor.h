@@ -18,6 +18,7 @@ struct CodeBlockInfo {
 
 struct PdschTxResult {
     ResourceGrid tx_grid;
+    ResourceGrid dmrs_grid;
     ComplexVec tx_signal;
     BitVec tb_bits_after_crc;
     int n_info_bits;

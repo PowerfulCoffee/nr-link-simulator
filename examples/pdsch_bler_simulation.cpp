@@ -13,49 +13,60 @@ using namespace nr;
 using namespace nr::phy;
 using namespace nr::channel;
 
-int main() {
+int main(int argc, char* argv[]) {
+    int mcs = 5;
+    double sinr_start = -2.0;
+    double sinr_end = 8.0;
+    double sinr_step = 1.0;
+    int max_blocks = 200;
+    int target_errors = 30;
+    
+    if (argc > 1) mcs = atoi(argv[1]);
+    if (argc > 2) sinr_start = atof(argv[2]);
+    if (argc > 3) sinr_end = atof(argv[3]);
+    if (argc > 4) sinr_step = atof(argv[4]);
+    
     SimulationConfig config;
-    config.mcs_index = 10;
+    config.mcs_index = mcs;
     config.n_rb = 25;
     config.n_tx_ant = 1;
     config.n_rx_ant = 1;
     config.n_layers = 1;
-    config.max_blocks_per_sinr = 20;
-    config.target_block_errors = 5;
-    config.sinr_start = 0.0;
-    config.sinr_end = 10.0;
-    config.sinr_step = 2.0;
+    config.max_blocks_per_sinr = max_blocks;
+    config.target_block_errors = target_errors;
+    config.sinr_start = sinr_start;
+    config.sinr_end = sinr_end;
+    config.sinr_step = sinr_step;
+    config.n_sinr_points = static_cast<int>((sinr_end - sinr_start) / sinr_step) + 1;
     config.channel_type = ChannelType::AWGN;
     config.mod_scheme = mcs_to_modulation(config.mcs_index);
     config.code_rate = mcs_to_code_rate(config.mcs_index);
-
+    config.dmrs_type = DmrsType::TYPE1;
+    config.dmrs_additional_pos = 0;
+    config.dmrs_duration = 1;
+    
     std::cout << "========================================\n";
-    std::cout << "  NR PDSCH BLER Simulation (Quick Test)\n";
+    std::cout << "  NR PDSCH BLER Simulation (OFDM Path)\n";
     std::cout << "========================================\n";
     std::cout << "Configuration:\n";
     std::cout << "  MCS Index:        " << config.mcs_index << "\n";
+    std::cout << "  Modulation:       " << (int)mcs_to_bits_per_symbol(config.mcs_index) << " QAM\n";
+    std::cout << "  Code rate:        " << config.code_rate << "\n";
     std::cout << "  Bandwidth:        " << config.n_rb << " PRBs\n";
-    std::cout << "  TX Antennas:      " << config.n_tx_ant << "\n";
-    std::cout << "  RX Antennas:      " << config.n_rx_ant << "\n";
-    std::cout << "  Layers:           " << config.n_layers << "\n";
     std::cout << "  SINR Range:       [" << config.sinr_start << ", " << config.sinr_end << "] dB, step " << config.sinr_step << " dB\n";
     std::cout << "  Max blocks/SINR:  " << config.max_blocks_per_sinr << "\n";
     std::cout << "  Target errors:    " << config.target_block_errors << "\n";
+    std::cout << "  DMRS:             Type1, single symbol, pos=2\n";
     std::cout << "========================================\n\n";
-
-    std::cout << "Starting BLER simulation...\n\n";
-
+    
     std::vector<BlerResult> results = run_bler_simulation(config, nullptr, "LS");
-
+    
     std::cout << "\n========================================\n";
     std::cout << "  Results Summary\n";
     std::cout << "========================================\n";
     std::cout << std::setw(10) << "SINR(dB)" << std::setw(12) << "Blocks" << std::setw(12) << "Errors" << std::setw(12) << "BLER" << "\n";
     std::cout << "----------------------------------------\n";
-
-    std::ofstream outfile("bler_results.csv");
-    outfile << "SINR_dB,Blocks,Errors,BLER\n";
-
+    
     for (size_t i = 0; i < results.size(); i++) {
         const BlerResult& res = results[i];
         std::cout << std::fixed << std::setprecision(2)
@@ -64,16 +75,7 @@ int main() {
                   << std::setw(12) << res.n_errors
                   << std::setw(12) << std::setprecision(6) << res.bler
                   << "\n";
-        outfile << std::fixed << std::setprecision(2)
-                << res.sinr_db << ","
-                << res.n_blocks << ","
-                << res.n_errors << ","
-                << std::setprecision(6) << res.bler << "\n";
     }
-
-    outfile.close();
-    std::cout << "========================================\n";
-    std::cout << "Results saved to: bler_results.csv\n";
-
+    
     return 0;
 }

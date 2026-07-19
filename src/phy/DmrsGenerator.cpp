@@ -138,12 +138,17 @@ public:
                         
                         Complex dmrs_val = base_sym * Complex(w_f, 0.0);
                         
+                        double beta = 1.0;
+                        if (config.dmrs_type == DmrsType::TYPE1) {
+                            beta = std::sqrt(2.0);
+                        }
+                        
                         if (config.n_layers <= n_ant) {
-                            grid.set_re(layer % n_ant, sym, sc, dmrs_val);
+                            grid.set_re(layer % n_ant, sym, sc, dmrs_val * beta);
                         } else {
                             double scale = 1.0 / std::sqrt((double)n_layers);
                             for (int ant = 0; ant < n_ant; ant++) {
-                                grid.set_re(ant, sym, sc, dmrs_val * scale);
+                                grid.set_re(ant, sym, sc, dmrs_val * scale * beta);
                             }
                         }
                     }

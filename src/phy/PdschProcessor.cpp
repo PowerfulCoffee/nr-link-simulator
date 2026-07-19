@@ -388,6 +388,8 @@ PdschTxResult PdschProcessor::transmit(const TransportBlock& tb, int slot_idx) {
 
     dmrs_generator_->generate_dmrs(config_, tx_grid, slot_idx, 0);
 
+    result.dmrs_grid = tx_grid;
+
     map_pdsch_to_grid(tx_grid, precoded, 0, n_pdsch_rbs_, dmrs_pattern_, config_, slot_idx);
 
     result.tx_grid = tx_grid;
@@ -578,7 +580,7 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
                                ? rx_grid_in
                                : fix_ofdm_demod_grid(rx_grid_in, n_rx_ant, n_sym, n_sc);
 
-    ResourceGrid dmrs_grid = tx_info.tx_grid;
+    ResourceGrid dmrs_grid = tx_info.dmrs_grid;
 
     SimulationConfig ch_config = config_;
     ch_config.n_layers = n_layers;
@@ -594,7 +596,20 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
 
     ComplexVec demapped = layer_mapper_->demap(equalized, n_layers);
 
-    SoftVec llr = modulator_->demodulate(demapped, config_.mod_scheme, noise_var);
+    std::vector<double> eff_noise = equalizer_->get_eff_noise_var();
+    int n_pdsch_re = equalized.n_rows;
+    std::vector<double> demapped_noise(demapped.n_elem, noise_var);
+    for (int i = 0; i < n_pdsch_re; i++) {
+        for (int l = 0; l < n_layers; l++) {
+            int out_idx = i * n_layers + l;
+            int eff_idx = i * n_layers + l;
+            if (out_idx < (int)demapped.n_elem && eff_idx < (int)eff_noise.size()) {
+                demapped_noise[out_idx] = (eff_noise[eff_idx] > 1e-12) ? eff_noise[eff_idx] : noise_var;
+            }
+        }
+    }
+
+    SoftVec llr = modulator_->demodulate(demapped, config_.mod_scheme, demapped_noise);
     for (int i = 0; i < (int)llr.size(); i++) {
         if (llr[i] > LLR_CLIP) llr[i] = LLR_CLIP;
         else if (llr[i] < -LLR_CLIP) llr[i] = -LLR_CLIP;
@@ -626,7 +641,8 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
     int n_sc = n_pdsch_rbs_ * 12;
     int n_sym = get_symbols_per_slot();
 
-    bool fast_awgn = (config_.channel_type == ChannelType::AWGN &&
+    bool fast_awgn = (config_.perfect_csi &&
+                      config_.channel_type == ChannelType::AWGN &&
                       config_.n_tx_ant == 1 && config_.n_rx_ant == 1 && config_.n_layers == 1);
 
     bool fast_fading = (config_.perfect_csi &&
@@ -787,8 +803,7 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
             ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
             ComplexVec rx_signal = channel_model_->apply_channel(tx_res.tx_signal, h);
 
-            double sig_pwr = arma::mean(arma::real(tx_res.tx_signal % arma::conj(tx_res.tx_signal)));
-            double noise_var_slow = sig_pwr / sinr_lin;
+            double noise_var_slow = 1.0 / sinr_lin;
             rx_signal = channel_model_->add_noise(rx_signal, noise_var_slow);
 
             int n_rx_ant = ch_config.n_rx_ant;

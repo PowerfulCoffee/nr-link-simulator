@@ -46,6 +46,8 @@ public:
     virtual ~IModulator() = default;
     virtual ComplexVec modulate(const BitVec& bits, ModulationScheme scheme) = 0;
     virtual SoftVec demodulate(const ComplexVec& symbols, ModulationScheme scheme, double noise_var) = 0;
+    virtual SoftVec demodulate(const ComplexVec& symbols, ModulationScheme scheme,
+                               const std::vector<double>& noise_vars) = 0;
 };
 
 class ILayerMapper {
@@ -84,6 +86,7 @@ public:
     virtual ~IEqualizer() = default;
     virtual ComplexMat equalize(const ComplexMat& rx_symbols, const ComplexCube& channel_est,
                                 double noise_var, int n_layers) = 0;
+    virtual std::vector<double> get_eff_noise_var() const { return {}; }
 };
 
 class IResourceMapper {

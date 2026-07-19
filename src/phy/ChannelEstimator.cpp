@@ -126,6 +126,18 @@ public:
                             h_est(sc, dmrs_sym, ch_idx) = Complex(1.0, 0.0);
                         }
                     }
+
+                    int cdm_group_size = 2;
+                    for (size_t i = 0; i + 1 < dmrs_sc.size(); i += cdm_group_size) {
+                        size_t j = i + 1;
+                        if (j >= dmrs_sc.size()) break;
+                        int sc_a = dmrs_sc[i];
+                        int sc_b = dmrs_sc[j];
+                        if (sc_b - sc_a > 2) continue;
+                        Complex avg = (h_est(sc_a, dmrs_sym, ch_idx) + h_est(sc_b, dmrs_sym, ch_idx)) / 2.0;
+                        h_est(sc_a, dmrs_sym, ch_idx) = avg;
+                        h_est(sc_b, dmrs_sym, ch_idx) = avg;
+                    }
                     
                     interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_idx, n_sc);
                 }

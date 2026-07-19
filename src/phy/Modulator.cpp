@@ -127,18 +127,24 @@ public:
     }
 
     SoftVec demodulate(const ComplexVec& sym, ModulationScheme scheme, double noise_var) override {
+        std::vector<double> noise_vars(sym.n_elem, noise_var);
+        return demodulate(sym, scheme, noise_vars);
+    }
+
+    SoftVec demodulate(const ComplexVec& sym, ModulationScheme scheme,
+                       const std::vector<double>& noise_vars) override {
         int bps = mod_to_bits_per_symbol(scheme);
         int n = static_cast<int>(sym.n_elem);
         SoftVec llr(n * bps);
-        double var_per_dim = std::max(noise_var / 2.0, 1e-12);
 
         for (int i = 0; i < n; i++) {
+            double nv = (i < (int)noise_vars.size()) ? noise_vars[i] : noise_vars.back();
+            double var_per_dim = std::max(nv / 2.0, 1e-12);
             if (scheme == ModulationScheme::BPSK) {
                 llr[i] = 2.0 * sym(i).real() / var_per_dim;
             } else if (scheme == ModulationScheme::QPSK) {
                 double a = 1.0 / std::sqrt(2.0);
                 double lr[1], li[1];
-                uint8_t dummy[1] = {0};
                 pam_demod_3gpp(sym(i).real(), var_per_dim, a, 1, lr);
                 pam_demod_3gpp(sym(i).imag(), var_per_dim, a, 1, li);
                 llr[2*i]   = lr[0];
