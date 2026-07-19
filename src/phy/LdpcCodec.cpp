@@ -278,6 +278,16 @@ public:
     }
 };
 
+namespace {
+
+inline double phi(double x) {
+    if (x < 1e-8) return 1e8;
+    if (x > 40.0) return 0.0;
+    return -std::log(std::tanh(x / 2.0));
+}
+
+}
+
 class LdpcDecoderImpl : public ILdpcDecoder {
     mutable std::vector<double> msg_c2v_;
     mutable std::vector<double> msg_v2c_;
@@ -293,6 +303,8 @@ public:
         int K = graph->K;
         int E = graph->total_edges;
         
+        const double llr_max = 20.0;
+        
         ch_llr_.assign(N, 0.0);
         post_.assign(N, 0.0);
         msg_c2v_.assign(E, 0.0);
@@ -303,23 +315,27 @@ public:
 
         if (in_len == N - n_pcb) {
             for (int i = 0; i < in_len; i++) {
-                ch_llr_[n_pcb + i] = llr_in[i];
-                post_[n_pcb + i] = llr_in[i];
+                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                ch_llr_[n_pcb + i] = v;
+                post_[n_pcb + i] = v;
             }
         } else if (in_len >= N) {
             for (int i = 0; i < N; i++) {
-                ch_llr_[i] = llr_in[i];
-                post_[i] = llr_in[i];
+                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                ch_llr_[i] = v;
+                post_[i] = v;
             }
         } else {
             for (int i = 0; i < in_len; i++) {
-                ch_llr_[i] = llr_in[i];
-                post_[i] = llr_in[i];
+                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                ch_llr_[i] = v;
+                post_[i] = v;
             }
         }
 
-        const double offset = 0.5;
         bool converged = false;
+        std::vector<double> phi_buf;
+        std::vector<int> sgn_buf;
 
         for (int iter = 0; iter < n_iter; iter++) {
             for (int v = 0; v < N; v++) {
@@ -327,6 +343,7 @@ public:
                 for (const auto& edge : graph->var_edges[v]) {
                     int eidx = edge.edge_idx;
                     msg_v2c_[eidx] = post_v - msg_c2v_[eidx];
+                    msg_v2c_[eidx] = std::max(-llr_max, std::min(llr_max, msg_v2c_[eidx]));
                 }
             }
 
@@ -336,32 +353,29 @@ public:
                 
                 int base = graph->check_edge_offset[i];
                 
-                double min1 = 1e10, min2 = 1e10;
+                phi_buf.resize(deg);
+                sgn_buf.resize(deg);
                 int sgn_prod = 1;
-                for (int e = 0; e < deg; e++) {
-                    double val = msg_v2c_[base + e];
-                    double a = std::fabs(val);
-                    int s = (val >= 0) ? 1 : -1;
-                    sgn_prod *= s;
-                    if (a < min1) {
-                        min2 = min1;
-                        min1 = a;
-                    } else if (a < min2) {
-                        min2 = a;
-                    }
-                }
+                double phi_sum = 0.0;
                 
                 for (int e = 0; e < deg; e++) {
                     double val = msg_v2c_[base + e];
                     double a = std::fabs(val);
                     int s = (val >= 0) ? 1 : -1;
-                    double res_mag;
-                    if (std::fabs(a - min1) < 1e-12) {
-                        res_mag = std::max(0.0, min2 - offset);
-                    } else {
-                        res_mag = std::max(0.0, min1 - offset);
-                    }
-                    int res_sgn = sgn_prod * s;
+                    sgn_buf[e] = s;
+                    sgn_prod *= s;
+                    double p = phi(a);
+                    phi_buf[e] = p;
+                    phi_sum += p;
+                }
+                
+                for (int e = 0; e < deg; e++) {
+                    double a = std::fabs(msg_v2c_[base + e]);
+                    double phi_sum_e = phi_sum - phi_buf[e];
+                    double res_mag = phi(phi_sum_e);
+                    if (!std::isfinite(res_mag) || res_mag < 0) res_mag = 0.0;
+                    if (res_mag > llr_max) res_mag = llr_max;
+                    int res_sgn = sgn_prod * sgn_buf[e];
                     msg_c2v_[base + e] = res_sgn * res_mag;
                 }
             }
@@ -371,7 +385,7 @@ public:
                 for (const auto& edge : graph->var_edges[v]) {
                     sum += msg_c2v_[edge.edge_idx];
                 }
-                post_[v] = sum;
+                post_[v] = std::max(-llr_max, std::min(llr_max, sum));
             }
 
             if (early_term) {
