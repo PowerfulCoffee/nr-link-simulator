@@ -1,187 +1,181 @@
-#!/usr/bin/env python3
-"""
-Plot MCS 0-27 BLER comparison: nr-link-simulator (C++) vs Sionna, AWGN SISO.
-Generates two figures:
-  1. A grid of subplots (4x7) showing all MCS BLER curves
-  2. A summary plot showing BLER=0.1 SNR points for all MCS
-"""
 import os
+import csv
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-import csv
+
+results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'results')
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'output')
+os.makedirs(output_dir, exist_ok=True)
+cpp_csv = os.path.join(results_dir, 'cpp_all_mcs_parsed.csv')
+sionna_csv = os.path.join(results_dir, 'sionna_all_mcs_awgn_fast.csv')
 
 def load_csv(path):
     data = {}
-    with open(path) as f:
+    if not os.path.exists(path):
+        return data
+    with open(path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            mcs = int(row['MCS'])
+            mcs = int(row['mcs'])
+            snr = float(row['snr_db'])
+            bler = float(row['bler'])
             if mcs not in data:
-                data[mcs] = {'snr': [], 'bler': [], 'blocks': [], 'errors': [],
-                            'mod': row['Modulation'], 'R': float(row['CodeRate']), 'qm': int(row['Qm'])}
-            data[mcs]['snr'].append(float(row['SINR_dB']))
-            data[mcs]['bler'].append(float(row['BLER']))
-            data[mcs]['blocks'].append(int(row['Blocks']))
-            data[mcs]['errors'].append(int(row['Errors']))
+                data[mcs] = []
+            data[mcs].append((snr, bler))
     for mcs in data:
-        for k in ['snr','bler','blocks','errors']:
-            data[mcs][k] = np.array(data[mcs][k])
+        data[mcs].sort()
     return data
 
-def find_snr_at_bler(snrs, blers, target=0.1):
-    if len(blers) < 2:
+def calc_bler10(snr_bler_list):
+    if not snr_bler_list:
         return None
-    snrs = np.asarray(snrs)
-    blers = np.asarray(blers)
-    for i in range(len(blers)-1):
-        b1, b2 = blers[i], blers[i+1]
-        s1, s2 = snrs[i], snrs[i+1]
-        if b1 >= target and b2 <= target:
-            if b1 == b2:
-                return (s1+s2)/2
-            t = (b1 - target) / (b1 - b2)
-            return s1 + t*(s2-s1)
-        if b1 == target:
-            return s1
+    sbl = sorted(snr_bler_list)
+    for i in range(len(sbl)-1):
+        s1, b1 = sbl[i]
+        s2, b2 = sbl[i+1]
+        if b1 >= 0.1 and b2 <= 0.1:
+            return s1 + (0.1 - b1) * (s2 - s1) / (b2 - b1)
+    for s, b in sbl:
+        if b < 0.1:
+            return s
     return None
 
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.dirname(script_dir)
-    cpp_path = os.path.join(base_dir, 'build', 'examples', 'results', 'cpp_awgn_all_mcs.csv')
-    sio_path = os.path.join(script_dir, 'results', 'sionna_awgn_all_mcs.csv')
-    out_dir = os.path.join(script_dir, 'results')
-    os.makedirs(out_dir, exist_ok=True)
+MCS_TABLE = [
+    (2, 120), (2, 193), (2, 308), (2, 449), (2, 602),
+    (4, 378), (4, 434), (4, 490), (4, 553), (4, 616), (4, 658),
+    (6, 466), (6, 517), (6, 567), (6, 616), (6, 666),
+    (6, 719), (6, 772), (6, 822), (6, 873),
+    (8, 682.5), (8, 711), (8, 754), (8, 797), (8, 841), (8, 885), (8, 916.5), (8, 948),
+]
+mod_names = {2:'QPSK', 4:'16QAM', 6:'64QAM', 8:'256QAM'}
+mod_colors = {2: '#1f77b4', 4: '#ff7f0e', 6: '#2ca02c', 8: '#d62728'}
 
-    cpp_data = load_csv(cpp_path)
-    sio_data = load_csv(sio_path) if os.path.exists(sio_path) else {}
+cpp_data = load_csv(cpp_csv)
+sionna_data = load_csv(sionna_csv)
 
-    print(f"Loaded C++ data: MCS {min(cpp_data.keys())}-{max(cpp_data.keys())}")
-    if sio_data:
-        print(f"Loaded Sionna data: MCS {min(sio_data.keys())}-{max(sio_data.keys())}")
+print(f"C++ data: {len(cpp_data)} MCS loaded")
+print(f"Sionna data: {len(sionna_data)} MCS loaded")
 
-    mcs_list = sorted(cpp_data.keys())
-    n_mcs = len(mcs_list)
-    ncols = 4
-    nrows = int(np.ceil(n_mcs / ncols))
+fig, axes = plt.subplots(2, 2, figsize=(18, 14))
+fig.suptitle('NR PDSCH BLER vs Es/N0 - C++ nr-link-simulator vs Sionna (AWGN SISO, 3PRB)', fontsize=14, fontweight='bold')
 
-    fig = plt.figure(figsize=(20, 24))
-    gs = GridSpec(nrows, ncols, figure=fig, hspace=0.35, wspace=0.3)
-    fig.suptitle('AWGN SISO BLER: nr-link-simulator (C++) vs Sionna, MCS 0-27\n'
-                 '3 PRB, 15kHz SCS, LDPC 20 iter, perfect CSI, Min-Sum vs BP',
-                 fontsize=16, fontweight='bold', y=0.98)
+mod_groups = {
+    'QPSK (MCS 0-4)': list(range(0, 5)),
+    '16QAM (MCS 5-10)': list(range(5, 11)),
+    '64QAM (MCS 11-19)': list(range(11, 20)),
+    '256QAM (MCS 20-27)': list(range(20, 28)),
+}
 
-    colors = {'cpp': '#1f77b4', 'sionna': '#d62728'}
-    markers = {'cpp': 'o', 'sionna': 's'}
+for ax_idx, (title, mcs_list) in enumerate(mod_groups.items()):
+    ax = axes[ax_idx // 2][ax_idx % 2]
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.set_xlabel('Es/N0 (dB)', fontsize=10)
+    ax.set_ylabel('BLER', fontsize=10)
+    ax.set_yscale('log')
+    ax.set_ylim(1e-3, 1.0)
+    ax.grid(True, alpha=0.3, which='both')
+    ax.axhline(y=0.1, color='gray', linestyle='--', alpha=0.5, linewidth=0.8)
 
-    summary = []
+    for mcs in mcs_list:
+        qm, r1024 = MCS_TABLE[mcs]
+        R = r1024 / 1024.0
+        color = mod_colors[qm]
+        alpha_base = 0.4 + 0.6 * (mcs - mcs_list[0]) / max(1, len(mcs_list)-1)
 
-    for idx, mcs in enumerate(mcs_list):
-        ax = fig.add_subplot(gs[idx // ncols, idx % ncols])
-        cd = cpp_data[mcs]
-        mod = cd['mod']; R = cd['R']; qm = cd['qm']
+        if mcs in cpp_data:
+            snrs = [x[0] for x in cpp_data[mcs]]
+            blers = [x[1] for x in cpp_data[mcs]]
+            ax.plot(snrs, blers, '-', color=color, alpha=alpha_base, linewidth=1.5,
+                    label=f'MCS{mcs} C++ (R={R:.2f})')
+            ax.plot(snrs, blers, 'o', color=color, alpha=alpha_base, markersize=3)
 
-        snr_cpp = cd['snr']; bler_cpp = cd['bler']
-        err_cpp = cd['errors']; n_cpp = cd['blocks']
-        ax.semilogy(snr_cpp, bler_cpp, color=colors['cpp'], marker=markers['cpp'],
-                    markersize=4, linewidth=1.5, label='nr-link-sim')
+        if mcs in sionna_data:
+            snrs = [x[0] for x in sionna_data[mcs]]
+            blers = [x[1] for x in sionna_data[mcs]]
+            ax.plot(snrs, blers, '--', color=color, alpha=alpha_base, linewidth=1.5,
+                    label=f'MCS{mcs} Sionna (R={R:.2f})')
+            ax.plot(snrs, blers, 's', color=color, alpha=alpha_base, markersize=3)
 
-        for i, (s, b, e, n) in enumerate(zip(snr_cpp, bler_cpp, err_cpp, n_cpp)):
-            if e > 0 and n > 0:
-                ci = 1.96 * np.sqrt(b * (1-b) / n)
-                ax.errorbar(s, b, yerr=min(ci, b*0.8), color=colors['cpp'], capsize=2, elinewidth=0.8)
+    ax.legend(fontsize=7, loc='lower left', ncol=2)
 
-        if mcs in sio_data:
-            sd = sio_data[mcs]
-            snr_sio = sd['snr']; bler_sio = sd['bler']
-            err_sio = sd['errors']; n_sio = sd['blocks']
-            ax.semilogy(snr_sio, bler_sio, color=colors['sionna'], marker=markers['sionna'],
-                        markersize=4, linewidth=1.5, label='Sionna')
-            for s, b, e, n in zip(snr_sio, bler_sio, err_sio, n_sio):
-                if e > 0 and n > 0:
-                    ci = 1.96 * np.sqrt(b * (1-b) / n)
-                    ax.errorbar(s, b, yerr=min(ci, b*0.8), color=colors['sionna'], capsize=2, elinewidth=0.8)
+plt.tight_layout()
+out_path1 = os.path.join(output_dir, 'bler_all_mcs_comparison.png')
+plt.savefig(out_path1, dpi=150, bbox_inches='tight')
+print(f"Saved BLER curves to {out_path1}")
+plt.close()
 
-        snr10_cpp = find_snr_at_bler(snr_cpp, bler_cpp, 0.1)
-        snr10_sio = find_snr_at_bler(sio_data[mcs]['snr'], sio_data[mcs]['bler'], 0.1) if mcs in sio_data else None
-        gap = (snr10_cpp - snr10_sio) if (snr10_cpp is not None and snr10_sio is not None) else None
-        summary.append((mcs, mod, R, qm, snr10_cpp, snr10_sio, gap))
+bler10_cpp = {}
+bler10_sionna = {}
+for mcs in range(28):
+    b10 = calc_bler10(cpp_data.get(mcs, []))
+    if b10 is not None:
+        bler10_cpp[mcs] = b10
+    b10s = calc_bler10(sionna_data.get(mcs, []))
+    if b10s is not None:
+        bler10_sionna[mcs] = b10s
 
-        ax.axhline(y=0.1, color='gray', linestyle='--', linewidth=0.7, alpha=0.6)
-        ax.set_xlabel('SNR (dB)', fontsize=8)
-        ax.set_ylabel('BLER', fontsize=8)
-        title = f'MCS{mcs} {mod} R={R:.3f}'
-        if gap is not None:
-            title += f' Δ={gap:+.1f}dB'
-        ax.set_title(title, fontsize=9, fontweight='bold')
-        ax.set_ylim(1e-4, 1.5)
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=7, loc='upper right')
-        ax.tick_params(labelsize=7)
+fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    out_path = os.path.join(out_dir, 'bler_all_mcs_comparison.png')
-    plt.savefig(out_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Saved grid plot to {out_path}")
+mcs_list_cpp = sorted(bler10_cpp.keys())
+snrs_cpp = [bler10_cpp[m] for m in mcs_list_cpp]
+rates = [MCS_TABLE[m][1]/1024.0 for m in mcs_list_cpp]
+qms = [MCS_TABLE[m][0] for m in mcs_list_cpp]
 
-    fig2, axes = plt.subplots(1, 2, figsize=(16, 6))
+for qm in [2, 4, 6, 8]:
+    mask = [i for i, m in enumerate(mcs_list_cpp) if qms[i] == qm]
+    if mask:
+        ax1.scatter([rates[i] for i in mask], [snrs_cpp[i] for i in mask],
+                   c=mod_colors[qm], label=f'{mod_names[qm]} C++', marker='o', s=60, alpha=0.8)
 
-    ax1 = axes[0]
-    mcs_arr = np.array([s[0] for s in summary])
-    snr10_cpp_arr = np.array([s[4] if s[4] is not None else np.nan for s in summary])
-    snr10_sio_arr = np.array([s[5] if s[5] is not None else np.nan for s in summary])
-    gap_arr = np.array([s[6] if s[6] is not None else np.nan for s in summary])
+mcs_list_s = sorted(bler10_sionna.keys())
+if mcs_list_s:
+    snrs_s = [bler10_sionna[m] for m in mcs_list_s]
+    rates_s = [MCS_TABLE[m][1]/1024.0 for m in mcs_list_s]
+    qms_s = [MCS_TABLE[m][0] for m in mcs_list_s]
+    for qm in [2, 4, 6, 8]:
+        mask = [i for i, m in enumerate(mcs_list_s) if qms_s[i] == qm]
+        if mask:
+            ax1.scatter([rates_s[i] for i in mask], [snrs_s[i] for i in mask],
+                       c=mod_colors[qm], label=f'{mod_names[qm]} Sionna', marker='s', s=60, alpha=0.5)
 
-    ax1.plot(mcs_arr, snr10_cpp_arr, color=colors['cpp'], marker='o', linewidth=2, label='nr-link-sim')
-    mask = ~np.isnan(snr10_sio_arr)
-    ax1.plot(mcs_arr[mask], snr10_sio_arr[mask], color=colors['sionna'], marker='s', linewidth=2, label='Sionna')
-    ax1.set_xlabel('MCS Index', fontsize=12)
-    ax1.set_ylabel('SNR @ BLER=0.1 (dB)', fontsize=12)
-    ax1.set_title('Required SNR for BLER=0.1 across all MCS', fontsize=13, fontweight='bold')
-    ax1.legend(fontsize=11)
-    ax1.grid(True, alpha=0.3)
-    ax1.set_xticks(mcs_arr)
+ax1.set_xlabel('Code Rate R', fontsize=11)
+ax1.set_ylabel('Es/N0 @ BLER=0.1 (dB)', fontsize=11)
+ax1.set_title('Required SNR for BLER=0.1 vs Code Rate', fontsize=12, fontweight='bold')
+ax1.grid(True, alpha=0.3)
+ax1.legend(fontsize=9)
 
-    ax2 = axes[1]
-    ax2.bar(mcs_arr[mask], gap_arr[mask], color=['#2ca02c' if g < 1.0 else '#ff7f0e' if g < 2.0 else '#d62728' for g in gap_arr[mask]],
-            edgecolor='black', linewidth=0.5)
-    ax2.axhline(y=0, color='black', linewidth=0.5)
-    ax2.axhline(y=1.0, color='green', linestyle='--', linewidth=1, alpha=0.5, label='1 dB gap')
-    ax2.set_xlabel('MCS Index', fontsize=12)
-    ax2.set_ylabel('SNR Gap (dB) [C++ - Sionna]', fontsize=12)
-    ax2.set_title('Performance Gap (C++ relative to Sionna)', fontsize=13, fontweight='bold')
-    ax2.legend(fontsize=11)
+diffs = []
+mcs_diffs = []
+for mcs in sorted(set(bler10_cpp.keys()) & set(bler10_sionna.keys())):
+    d = bler10_cpp[mcs] - bler10_sionna[mcs]
+    diffs.append(d)
+    mcs_diffs.append(mcs)
+    qm = MCS_TABLE[mcs][0]
+    ax2.bar(mcs, d, color=mod_colors[qm], alpha=0.7, width=0.7)
+
+if diffs:
+    avg_diff = np.mean(diffs)
+    ax2.axhline(y=avg_diff, color='black', linestyle='--', linewidth=1.5, label=f'Mean gap = {avg_diff:.2f} dB')
+    ax2.set_title(f'C++ vs Sionna SNR Gap @ BLER=0.1 (positive = C++ worse)', fontsize=12, fontweight='bold')
+    ax2.set_xlabel('MCS Index', fontsize=11)
+    ax2.set_ylabel('SNR Gap (dB)', fontsize=11)
     ax2.grid(True, alpha=0.3, axis='y')
-    ax2.set_xticks(mcs_arr)
+    ax2.legend(fontsize=10)
+    ax2.set_xticks(range(0, 28, 2))
+    print(f"\nC++ vs Sionna SNR gaps at BLER=0.1:")
+    for m, d in zip(mcs_diffs, diffs):
+        qm, r1024 = MCS_TABLE[m]
+        print(f"  MCS{m:2d} ({mod_names[qm]:6s} R={r1024/1024:.3f}): gap = {d:+.2f} dB (C++ at {bler10_cpp[m]:.2f}, Sionna at {bler10_sionna[m]:.2f})")
+    print(f"  Mean gap: {avg_diff:.2f} dB")
+else:
+    ax2.set_title('C++ vs Sionna SNR Gap (waiting for Sionna results...)', fontsize=12, fontweight='bold')
+    ax2.text(0.5, 0.5, 'Sionna simulation running...\nGap plot will update when complete',
+             transform=ax2.transAxes, ha='center', va='center', fontsize=14)
 
-    fig2.suptitle('MCS 0-27 Performance Summary (AWGN SISO)', fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    out_path2 = os.path.join(out_dir, 'bler_all_mcs_summary.png')
-    plt.savefig(out_path2, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Saved summary plot to {out_path2}")
-
-    print("\n=== Summary: BLER=0.1 SNR (dB) ===")
-    print(f"{'MCS':>4} {'Mod':>6} {'R':>6} {'Qm':>3} {'C++':>8} {'Sionna':>8} {'Gap':>8}")
-    print("-" * 50)
-    for mcs, mod, R, qm, s10c, s10s, gap in summary:
-        sc = f'{s10c:+.2f}' if s10c is not None else '  N/A '
-        ss = f'{s10s:+.2f}' if s10s is not None else '  N/A '
-        sg = f'{gap:+.2f}' if gap is not None else '  N/A '
-        print(f"{mcs:4d} {mod:>6} {R:6.3f} {qm:3d} {sc:>8} {ss:>8} {sg:>8}")
-
-    csv_path = os.path.join(out_dir, 'bler_all_mcs_summary.csv')
-    with open(csv_path, 'w') as f:
-        f.write('MCS,Modulation,CodeRate,Qm,SNR_BLER10_Cpp,SNR_BLER10_Sionna,Gap_dB\n')
-        for mcs, mod, R, qm, s10c, s10s, gap in summary:
-            f.write(f'{mcs},{mod},{R:.6f},{qm},')
-            f.write(f'{s10c:.4f},' if s10c is not None else ',')
-            f.write(f'{s10s:.4f},' if s10s is not None else ',')
-            f.write(f'{gap:.4f}\n' if gap is not None else '\n')
-    print(f"\nSaved summary CSV to {csv_path}")
-
-if __name__ == '__main__':
-    main()
+plt.tight_layout()
+out_path2 = os.path.join(output_dir, 'bler_all_mcs_summary.png')
+plt.savefig(out_path2, dpi=150, bbox_inches='tight')
+print(f"Saved summary plot to {out_path2}")
+plt.close()

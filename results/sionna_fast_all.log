@@ -1,0 +1,225 @@
+Sionna AWGN BLER (fast) - 2000 max blocks, 50 target errors
+=== MCS  0 (Qm=2, R=0.117, TBS=104) ===
+  Qm=2, R=0.117, TBS=104, n_coded_bits=936, eff_rate=0.111
+  Skipping (R=0.111 < 0.2: Sionna doesn't support repetition)
+
+=== MCS  1 (Qm=2, R=0.188, TBS=176) ===
+  Qm=2, R=0.188, TBS=176, n_coded_bits=936, eff_rate=0.188
+  Skipping (R=0.188 < 0.2: Sionna doesn't support repetition)
+
+=== MCS  2 (Qm=2, R=0.301, TBS=288) ===
+  Qm=2, R=0.301, TBS=288, n_coded_bits=936, eff_rate=0.308
+    SNR  -6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  -4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  -2.0 dB: BLER=0.8750 (400 blocks, 350 errors)
+    SNR   0.0 dB: BLER=0.0005 (2000 blocks, 1 errors)
+    SNR   2.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  3 (Qm=2, R=0.438, TBS=408) ===
+  Qm=2, R=0.438, TBS=408, n_coded_bits=936, eff_rate=0.436
+    SNR  -6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  -4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  -2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   0.0 dB: BLER=0.8275 (400 blocks, 331 errors)
+    SNR   2.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  4 (Qm=2, R=0.588, TBS=552) ===
+  Qm=2, R=0.588, TBS=552, n_coded_bits=936, eff_rate=0.590
+    SNR  -4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  -2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   0.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   2.0 dB: BLER=0.7875 (400 blocks, 315 errors)
+    SNR   4.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  5 (Qm=4, R=0.369, TBS=704) ===
+  Qm=4, R=0.369, TBS=704, n_coded_bits=1872, eff_rate=0.376
+    SNR   0.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   4.0 dB: BLER=0.6200 (400 blocks, 248 errors)
+    SNR   6.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  6 (Qm=4, R=0.424, TBS=808) ===
+  Qm=4, R=0.424, TBS=808, n_coded_bits=1872, eff_rate=0.432
+    SNR   0.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=0.0025 (2000 blocks, 5 errors)
+    SNR   8.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  7 (Qm=4, R=0.479, TBS=888) ===
+  Qm=4, R=0.479, TBS=888, n_coded_bits=1872, eff_rate=0.474
+    SNR   0.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=0.2650 (400 blocks, 106 errors)
+    SNR   8.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  8 (Qm=4, R=0.540, TBS=1032) ===
+  Qm=4, R=0.540, TBS=1032, n_coded_bits=1872, eff_rate=0.551
+    SNR   2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=0.0020 (2000 blocks, 4 errors)
+    SNR  10.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS  9 (Qm=4, R=0.602, TBS=1128) ===
+  Qm=4, R=0.602, TBS=1128, n_coded_bits=1872, eff_rate=0.603
+    SNR   2.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=0.3550 (400 blocks, 142 errors)
+    SNR  10.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 10 (Qm=4, R=0.643, TBS=1224) ===
+  Qm=4, R=0.643, TBS=1224, n_coded_bits=1872, eff_rate=0.654
+    SNR   2.0 dB: BLER=0.9975 (400 blocks, 399 errors)
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=0.9875 (400 blocks, 395 errors)
+    SNR  10.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 11 (Qm=6, R=0.455, TBS=1288) ===
+  Qm=6, R=0.455, TBS=1288, n_coded_bits=2808, eff_rate=0.459
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=0.0875 (800 blocks, 70 errors)
+    SNR  12.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 12 (Qm=6, R=0.505, TBS=1416) ===
+  Qm=6, R=0.505, TBS=1416, n_coded_bits=2808, eff_rate=0.504
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=0.9700 (400 blocks, 388 errors)
+    SNR  12.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 13 (Qm=6, R=0.554, TBS=1608) ===
+  Qm=6, R=0.554, TBS=1608, n_coded_bits=2808, eff_rate=0.573
+    SNR   4.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   6.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=0.3225 (400 blocks, 129 errors)
+    SNR  14.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 14 (Qm=6, R=0.602, TBS=1736) ===
+  Qm=6, R=0.602, TBS=1736, n_coded_bits=2808, eff_rate=0.618
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 15 (Qm=6, R=0.650, TBS=1864) ===
+  Qm=6, R=0.650, TBS=1864, n_coded_bits=2808, eff_rate=0.664
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=0.1775 (400 blocks, 71 errors)
+    SNR  16.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 16 (Qm=6, R=0.702, TBS=2024) ===
+  Qm=6, R=0.702, TBS=2024, n_coded_bits=2808, eff_rate=0.721
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 17 (Qm=6, R=0.754, TBS=2152) ===
+  Qm=6, R=0.754, TBS=2152, n_coded_bits=2808, eff_rate=0.766
+    SNR   8.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=0.0688 (800 blocks, 55 errors)
+    SNR  18.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 18 (Qm=6, R=0.803, TBS=2280) ===
+  Qm=6, R=0.803, TBS=2280, n_coded_bits=2808, eff_rate=0.812
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=0.9825 (400 blocks, 393 errors)
+    SNR  18.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 19 (Qm=6, R=0.853, TBS=2408) ===
+  Qm=6, R=0.853, TBS=2408, n_coded_bits=2808, eff_rate=0.858
+    SNR  10.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=0.0255 (2000 blocks, 51 errors)
+    SNR  20.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 20 (Qm=8, R=0.667, TBS=2472) ===
+  Qm=8, R=0.667, TBS=2472, n_coded_bits=3744, eff_rate=0.660
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=0.8200 (400 blocks, 328 errors)
+    SNR  20.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 21 (Qm=8, R=0.694, TBS=2600) ===
+  Qm=8, R=0.694, TBS=2600, n_coded_bits=3744, eff_rate=0.694
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 22 (Qm=8, R=0.736, TBS=2792) ===
+  Qm=8, R=0.736, TBS=2792, n_coded_bits=3744, eff_rate=0.746
+    SNR  12.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  14.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=0.6475 (400 blocks, 259 errors)
+    SNR  22.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 23 (Qm=8, R=0.778, TBS=2976) ===
+  Qm=8, R=0.778, TBS=2976, n_coded_bits=3744, eff_rate=0.795
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  22.0 dB: BLER=0.0045 (2000 blocks, 9 errors)
+    SNR  24.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 24 (Qm=8, R=0.821, TBS=3104) ===
+  Qm=8, R=0.821, TBS=3104, n_coded_bits=3744, eff_rate=0.829
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  22.0 dB: BLER=0.6625 (400 blocks, 265 errors)
+    SNR  24.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 25 (Qm=8, R=0.864, TBS=3240) ===
+  Qm=8, R=0.864, TBS=3240, n_coded_bits=3744, eff_rate=0.865
+    SNR  16.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  22.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  24.0 dB: BLER=0.0005 (2000 blocks, 1 errors)
+    SNR  26.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 26 (Qm=8, R=0.895, TBS=3368) ===
+  Qm=8, R=0.895, TBS=3368, n_coded_bits=3744, eff_rate=0.900
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  22.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  24.0 dB: BLER=0.5300 (400 blocks, 212 errors)
+    SNR  26.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+=== MCS 27 (Qm=8, R=0.926, TBS=3496) ===
+  Qm=8, R=0.926, TBS=3496, n_coded_bits=3744, eff_rate=0.934
+/root/.pyenv/versions/3.14.4/lib/python3.14/site-packages/sionna/phy/fec/ldpc/encoding.py:128: UserWarning: Effective coderate r>948/1024 for n=3744, k=3512.
+  warnings.warn(
+    SNR  18.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  20.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  22.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  24.0 dB: BLER=1.0000 (400 blocks, 400 errors)
+    SNR  26.0 dB: BLER=0.0045 (2000 blocks, 9 errors)
+    SNR  28.0 dB: BLER=0.0000 (2000 blocks, 0 errors)
+
+
+All done! Results saved to /workspace/nr-link-simulator/scripts/../results/sionna_all_mcs_awgn_fast.csv

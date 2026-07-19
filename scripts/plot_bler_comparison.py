@@ -39,7 +39,9 @@ def binomial_ci(k, n, confidence=0.95):
     return p_hat - lower, upper - p_hat
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-results_dir = os.path.join(script_dir, 'results')
+project_dir = os.path.abspath(os.path.join(script_dir, '..'))
+results_dir = os.path.join(project_dir, 'results')
+output_dir = os.path.join(project_dir, 'output')
 
 cpp_tdla_path = os.path.join(results_dir, 'bler_mcs27_tdla_perfect_csi.csv')
 sionna_tdla_path = os.path.join(results_dir, 'sionna_mcs27_tdla_perfect_csi.csv')
@@ -105,7 +107,7 @@ ax.text(0.02, 0.02,
 ax.legend(fontsize=10, loc='lower left')
 
 plt.tight_layout()
-out_path = os.path.join(script_dir, 'bler_mcs27_waterfall.png')
+out_path = os.path.join(output_dir, 'bler_mcs27_waterfall.png')
 plt.savefig(out_path, dpi=150, bbox_inches='tight')
 print(f"Plot saved to {out_path}")
 
