@@ -10,6 +10,12 @@
 namespace nr {
 namespace phy {
 
+struct CodeBlockInfo {
+    int offset;
+    int length;
+    int e_bits;
+};
+
 struct PdschTxResult {
     ResourceGrid tx_grid;
     ComplexVec tx_signal;
@@ -18,7 +24,15 @@ struct PdschTxResult {
     int n_coded_bits;
     int bgn;
     int zc;
+    int k_b;
+    int qm;
     uint32_t scrambling_seed;
+    int num_cb;
+    int cb_crc_len;
+    int cb_info_bits;
+    int cb_size_with_crc;
+    std::vector<CodeBlockInfo> cb_info;
+    int cb_e_bits;
 };
 
 struct PdschRxResult {
@@ -70,10 +84,13 @@ private:
     int n_pdsch_symbols_;
     int n_pdsch_rbs_;
     int n_dmrs_symbols_;
+    DmrsPattern dmrs_pattern_;
     
     void init_default_modules();
     int calculate_pdsch_capacity();
     ComplexMat get_identity_precoding_matrix();
+    bool decode_transport_block(const SoftVec& descrambled_llr, const PdschTxResult& tx_info,
+                                BitVec& decoded_info_bits);
 };
 
 std::vector<BlerResult> run_bler_simulation(const SimulationConfig& config,

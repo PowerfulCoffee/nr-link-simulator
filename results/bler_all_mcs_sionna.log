@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/workspace/nr-link-simulator/scripts/sionna_all_mcs_awgn.py", line 34, in <module>
+    from sionna.phy.utils import BinarySource
+ImportError: cannot import name 'BinarySource' from 'sionna.phy.utils' (/root/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sionna/phy/utils/__init__.py)

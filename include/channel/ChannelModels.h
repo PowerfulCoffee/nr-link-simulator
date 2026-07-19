@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Types.h"
+#include <random>
 
 namespace nr {
 namespace channel {
@@ -71,6 +72,7 @@ private:
     ChannelType type_;
     SimulationConfig config_;
     uint64_t seed_;
+    std::mt19937 rng_;
     TdlParams tdl_params_;
     
     void init_tdl_params();
@@ -91,6 +93,7 @@ private:
     ChannelType type_;
     SimulationConfig config_;
     uint64_t seed_;
+    std::mt19937 rng_;
     CdlParams cdl_params_;
     
     void init_cdl_params();

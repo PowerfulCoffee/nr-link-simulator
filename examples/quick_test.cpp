@@ -2,7 +2,6 @@
 #include "common/NrTables.h"
 #include "phy/PdschProcessor.h"
 #include <iostream>
-#include <fstream>
 #include <iomanip>
 
 using namespace nr;
@@ -10,46 +9,34 @@ using namespace nr::phy;
 
 int main() {
     SimulationConfig config;
-    config.mcs_index = 5;
-    config.n_rb = 6;
+    config.mcs_index = 27;
+    config.n_rb = 3;
     config.n_tx_ant = 1;
     config.n_rx_ant = 1;
     config.n_layers = 1;
-    config.max_blocks_per_sinr = 500;
-    config.target_block_errors = 50;
-    config.sinr_start = -4.0;
-    config.sinr_end = 4.0;
-    config.sinr_step = 0.5;
+    config.max_blocks_per_sinr = 5;
+    config.target_block_errors = 100;
+    config.sinr_start = 25.0;
+    config.sinr_end = 25.0;
+    config.sinr_step = 1.0;
     config.channel_type = ChannelType::AWGN;
     config.mod_scheme = mcs_to_modulation(config.mcs_index);
     config.code_rate = mcs_to_code_rate(config.mcs_index);
-    config.n_ldpc_iterations = 30;
+    config.n_ldpc_iterations = 20;
     config.early_termination = true;
-    
-    std::cout << "=== NR Link Simulator - PDSCH BLER (AWGN, Ideal CSI) ===\n";
-    std::cout << "MCS " << config.mcs_index << ": QPSK, R=" << config.code_rate << "\n";
-    std::cout << "PRBs = " << config.n_rb << ", 1x1 SISO, LDPC iter=" << config.n_ldpc_iterations << "\n\n";
-    
-    std::ofstream out("../bler_awgn_ideal.csv");
-    out << "SINR_dB,Blocks,Errors,BLER\n";
-    std::cout << std::setw(10) << "SINR(dB)" << std::setw(10) << "Blocks" << std::setw(10) << "Errors" << std::setw(12) << "BLER\n";
-    
-    for (double sinr = config.sinr_start; sinr <= config.sinr_end + 0.01; sinr += config.sinr_step) {
-        SimulationConfig cfg = config;
-        PdschProcessor proc(cfg);
-        auto channel = channel::create_channel(cfg.channel_type);
-        proc.set_channel_model(std::move(channel));
-        BlerResult res;
-        proc.process_single_snr_point(sinr, res);
-        std::cout << std::fixed << std::setprecision(2)
-                  << std::setw(10) << res.sinr_db
-                  << std::setw(10) << res.n_blocks
-                  << std::setw(10) << res.n_errors
-                  << std::setw(12) << std::setprecision(4) << res.bler << "\n";
-        out << std::setprecision(2) << res.sinr_db << "," << res.n_blocks << "," << res.n_errors << "," << std::setprecision(6) << res.bler << "\n";
-        out.flush();
+    config.random_seed = 42;
+    config.scs = 15000;
+
+    int qm = mcs_to_bits_per_symbol(config.mcs_index);
+    double R = mcs_to_code_rate(config.mcs_index);
+    int n_re_per_prb = 13*12;
+    int tbs = calculate_tbs(config.n_rb, n_re_per_prb, qm, config.n_layers, R);
+    std::cout << "TBS = " << tbs << " bits, Qm=" << qm << ", R=" << R << "\n";
+
+    auto results = run_bler_simulation(config, nullptr, "LS");
+    for (auto& r : results) {
+        std::cout << "SINR=" << r.sinr_db << " dB: " << r.n_errors << "/" << r.n_blocks
+                  << " errors, BLER=" << std::fixed << std::setprecision(4) << r.bler << "\n";
     }
-    out.close();
-    std::cout << "\nResults saved to bler_awgn_ideal.csv\n";
     return 0;
 }

@@ -8,12 +8,12 @@ namespace nr {
 using namespace nr::ldpc;
 
 const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_1 = {{
-    {2, 120},   {2, 157},   {2, 193},   {2, 251},   {2, 308},
-    {2, 379},   {2, 449},   {2, 526},   {2, 602},   {2, 679},
-    {4, 340},   {4, 378},   {4, 434},   {4, 490},   {4, 553},
-    {4, 616},   {4, 658},   {6, 438},   {6, 466},   {6, 517},
-    {6, 567},   {6, 616},   {6, 666},   {6, 719},   {6, 772},
-    {6, 822},   {6, 873},   {6, 910},   {6, 948}
+    {2, 120},   {2, 193},   {2, 308},   {2, 449},   {2, 602},
+    {4, 378},   {4, 434},   {4, 490},   {4, 553},   {4, 616},
+    {4, 658},   {6, 466},   {6, 517},   {6, 567},   {6, 616},
+    {6, 666},   {6, 719},   {6, 772},   {6, 822},   {6, 873},
+    {8, 682.5}, {8, 711},   {8, 754},   {8, 797},   {8, 841},
+    {8, 885},   {8, 916.5}, {8, 948},   {-1, -1}
 }};
 
 ModulationScheme mcs_to_modulation(int mcs) {
@@ -229,6 +229,65 @@ DmrsPattern get_dmrs_pattern(DmrsType type, int additional_pos, int duration) {
     }
     
     return pattern;
+}
+
+CodeBlockSegParams compute_cb_segmentation(int tb_size, int n_info_bits_after_tb_crc,
+                                           int n_re_per_prb, int n_prb,
+                                           int qm, int n_layers, double target_coderate) {
+    CodeBlockSegParams params{};
+    int B = n_info_bits_after_tb_crc;
+    int G = n_prb * n_re_per_prb * qm * n_layers;
+    
+    if (B <= 3824) {
+        params.num_cb = 1;
+        params.tb_crc_len = (tb_size > 3824) ? 24 : 16;
+        params.cb_crc_len = 0;
+        params.cb_info_bits = B;
+        params.cb_size_with_crc = B;
+        
+        LdpcParams ldpc = select_ldpc_params(B, target_coderate);
+        params.bgn = ldpc.bgn;
+        params.zc = ldpc.zc;
+        params.k_b = ldpc.k_b;
+        params.cb_k = ldpc.k;
+        
+        int E_r = G;
+        params.cw_length = E_r * params.num_cb;
+    } else {
+        params.num_cb = (B + 8423) / 8424;
+        params.tb_crc_len = 24;
+        params.cb_crc_len = 24;
+        
+        int B_prime = B + params.num_cb * params.cb_crc_len;
+        int K_prime = (B_prime + params.num_cb - 1) / params.num_cb;
+        K_prime = ((K_prime + 7) / 8) * 8;
+        
+        params.cb_info_bits = K_prime - params.cb_crc_len;
+        params.cb_size_with_crc = K_prime;
+        
+        LdpcParams ldpc = select_ldpc_params(K_prime, target_coderate);
+        params.bgn = ldpc.bgn;
+        params.zc = ldpc.zc;
+        params.k_b = ldpc.k_b;
+        params.cb_k = ldpc.k;
+        
+        int E_r;
+        if (target_coderate > 0.67 && G >= params.num_cb * params.cb_k * 8) {
+            E_r = G / params.num_cb;
+            E_r = (E_r / (8 * qm)) * 8 * qm;
+        } else {
+            E_r = G / params.num_cb;
+            E_r = (E_r / qm) * qm;
+        }
+        params.cw_length = E_r * params.num_cb;
+        if (params.cw_length < G) {
+            E_r = (G + params.num_cb - 1) / params.num_cb;
+            E_r = ((E_r + qm - 1) / qm) * qm;
+            params.cw_length = E_r * params.num_cb;
+        }
+    }
+    
+    return params;
 }
 
 }

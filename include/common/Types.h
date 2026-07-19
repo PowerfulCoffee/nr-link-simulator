@@ -99,6 +99,7 @@ struct SimulationConfig {
     DmrsType dmrs_type = DmrsType::TYPE1;
     int dmrs_additional_pos = 0;
     int dmrs_duration = 1;
+    bool tdd_enabled = false;
     
     int mcs_index = 15;
     ModulationScheme mod_scheme = ModulationScheme::QPSK;
@@ -117,6 +118,7 @@ struct SimulationConfig {
     
     int n_ldpc_iterations = 25;
     bool early_termination = true;
+    bool perfect_csi = false;
 };
 
 struct ResourceGrid {

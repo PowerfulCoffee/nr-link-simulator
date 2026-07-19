@@ -6,12 +6,27 @@
 namespace nr {
 namespace channel {
 
-TdlChannel::TdlChannel(ChannelType type) : type_(type), seed_(12345) {
+namespace {
+
+int get_fft_size(int n_subcarriers) {
+    int fft_size = 1;
+    while (fft_size < n_subcarriers + 1) fft_size <<= 1;
+    return fft_size;
+}
+int get_cp_len(int fft_size, bool is_first) {
+    int cp = 144 * fft_size / 2048;
+    return is_first ? cp + 16 * fft_size / 2048 : cp;
+}
+
+}
+
+TdlChannel::TdlChannel(ChannelType type) : type_(type), seed_(12345), rng_(12345) {
     init_tdl_params();
 }
 
 void TdlChannel::set_seed(uint64_t seed) {
     seed_ = seed;
+    rng_.seed(seed);
 }
 
 void TdlChannel::set_config(const SimulationConfig& config) {
@@ -104,7 +119,6 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
     
     ComplexCube h(n_sc, n_symbols, n_rx_ant * n_layers, arma::fill::zeros);
     
-    std::mt19937 rng(seed_);
     std::normal_distribution<double> dist(0.0, 1.0);
     
     double max_delay = 0.0;
@@ -122,8 +136,8 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
                 }
                 
                 for (int t = 0; t < tdl_params_.n_taps; t++) {
-                    double re = dist(rng) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
-                    double im = dist(rng) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
+                    double re = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
+                    double im = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
                     tap_coeffs(t, 0) = Complex(re, im);
                 }
                 
@@ -135,7 +149,13 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
                 }
                 
                 for (int sc = 0; sc < n_sc; sc++) {
-                    double freq = sc * config_.scs;
+                    int half_sc = n_sc / 2;
+                    double freq;
+                    if (sc < half_sc) {
+                        freq = (sc - half_sc) * config_.scs;
+                    } else {
+                        freq = (sc - half_sc + 1) * config_.scs;
+                    }
                     Complex h_freq(0, 0);
                     for (int t = 0; t < tdl_params_.n_taps; t++) {
                         double delay = tdl_params_.norm_delay[t] * config_.delay_spread;
@@ -152,7 +172,71 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
 }
 
 ComplexVec TdlChannel::apply_channel(const ComplexVec& tx_signal, const ComplexCube& h) {
-    return tx_signal;
+    int n_sc = static_cast<int>(h.n_rows);
+    int n_sym = static_cast<int>(h.n_cols);
+    int n_ch = static_cast<int>(h.n_slices);
+    int n_rx_ant = config_.n_rx_ant;
+    int n_layers = config_.n_layers;
+    int n_tx_ant = config_.n_tx_ant;
+
+    int fft_size = get_fft_size(n_sc);
+    int cp0 = get_cp_len(fft_size, true);
+    int cp1 = get_cp_len(fft_size, false);
+    int samples_per_ant = fft_size + cp0 + (n_sym - 1) * (fft_size + cp1);
+
+    int n_tx = std::max(1, n_tx_ant);
+    int expected_total = n_tx * samples_per_ant;
+    (void)expected_total;
+
+    int n_rx = n_rx_ant;
+    int rx_total = n_rx * samples_per_ant;
+    ComplexVec rx_signal(rx_total, arma::fill::zeros);
+
+    int dc_pos = fft_size / 2;
+    int half_sc = n_sc / 2;
+
+    for (int rx = 0; rx < n_rx; rx++) {
+        int rx_offset = rx * samples_per_ant;
+        int sym_offset = 0;
+        for (int sym = 0; sym < n_sym; sym++) {
+            int cp_len = (sym == 0) ? cp0 : cp1;
+
+            ComplexVec tx_freq(fft_size, arma::fill::zeros);
+            for (int sc = 0; sc < half_sc; sc++) {
+                int tx_idx = 0 * samples_per_ant + sym_offset + cp_len;
+                (void)tx_idx;
+                tx_freq(dc_pos - half_sc + sc) = 0;
+            }
+
+            ComplexVec tx_time(fft_size);
+            for (int i = 0; i < fft_size; i++) {
+                tx_time(i) = tx_signal(0 * samples_per_ant + sym_offset + cp_len + i);
+            }
+            ComplexVec freq_in = arma::fft(tx_time) / std::sqrt(static_cast<double>(fft_size));
+
+            ComplexVec freq_out(fft_size, arma::fill::zeros);
+            freq_out(dc_pos) = Complex(0, 0);
+            for (int sc = 0; sc < n_sc; sc++) {
+                int bin;
+                if (sc < half_sc) bin = dc_pos - half_sc + sc;
+                else bin = dc_pos + 1 + (sc - half_sc);
+                Complex h_val = h(sc, sym, rx * n_layers + 0);
+                freq_out(bin) = freq_in(bin) * h_val;
+            }
+
+            ComplexVec time_out = arma::ifft(freq_out) * std::sqrt(static_cast<double>(fft_size));
+
+            for (int i = 0; i < cp_len; i++) {
+                rx_signal(rx_offset + sym_offset + i) = time_out(fft_size - cp_len + i);
+            }
+            for (int i = 0; i < fft_size; i++) {
+                rx_signal(rx_offset + sym_offset + cp_len + i) = time_out(i);
+            }
+            sym_offset += fft_size + cp_len;
+        }
+    }
+
+    return rx_signal;
 }
 
 double TdlChannel::get_thermal_noise(double sinr_db, double bandwidth, double noise_figure) {
@@ -161,13 +245,12 @@ double TdlChannel::get_thermal_noise(double sinr_db, double bandwidth, double no
 }
 
 ComplexVec TdlChannel::add_noise(const ComplexVec& signal, double noise_var) {
-    std::mt19937 rng(seed_++);
     std::normal_distribution<double> dist(0.0, std::sqrt(noise_var / 2.0));
     
     ComplexVec noisy(signal.n_elem);
     for (int i = 0; i < signal.n_elem; i++) {
-        double noise_re = dist(rng);
-        double noise_im = dist(rng);
+        double noise_re = dist(rng_);
+        double noise_im = dist(rng_);
         noisy(i) = signal(i) + Complex(noise_re, noise_im);
     }
     

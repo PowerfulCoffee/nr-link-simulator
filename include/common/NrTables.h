@@ -19,6 +19,19 @@ struct LdpcParams {
     int n_info_bits;
 };
 
+struct CodeBlockSegParams {
+    int num_cb;
+    int tb_crc_len;
+    int cb_crc_len;
+    int cb_info_bits;
+    int cb_size_with_crc;
+    int cb_k;
+    int bgn;
+    int zc;
+    int k_b;
+    int cw_length;
+};
+
 constexpr int MAX_MCS_INDEX = 28;
 
 extern const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_1;
@@ -32,6 +45,9 @@ int mod_to_bits_per_symbol(ModulationScheme mod);
 
 int calculate_tbs(int n_prb, int n_re_per_prb, int qm, int n_layers, double target_coderate);
 int calculate_num_coded_bits(int n_prb, int n_re_per_prb, int qm, int n_layers);
+CodeBlockSegParams compute_cb_segmentation(int tb_size, int n_info_bits_after_tb_crc,
+                                           int n_re_per_prb, int n_prb,
+                                           int qm, int n_layers, double target_coderate);
 
 constexpr int get_rb_size(int scs) {
     return 12;

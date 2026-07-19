@@ -28,8 +28,10 @@ public:
 class IRateMatcher {
 public:
     virtual ~IRateMatcher() = default;
-    virtual BitVec rate_match(const BitVec& coded_bits, int E, int rv, int bgn, int zc) = 0;
-    virtual SoftVec rate_recover(const SoftVec& llr, int N, int rv, int bgn, int zc) = 0;
+    virtual BitVec rate_match(const BitVec& coded_bits, int E, int rv, int bgn, int zc,
+                              int qm = 0, int n_filler = 0) = 0;
+    virtual SoftVec rate_recover(const SoftVec& llr, int N, int rv, int bgn, int zc,
+                                  int qm = 0, int n_filler = 0) = 0;
 };
 
 class IScrambler {
