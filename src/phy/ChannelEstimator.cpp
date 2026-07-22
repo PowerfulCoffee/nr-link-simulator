@@ -104,9 +104,19 @@ public:
                     }
                 }
             }
+            estimated_noise_var_ = 1e-6;
             return h_est;
         }
-        
+
+        double noise_power_sum = 0.0;
+        int noise_sample_count = 0;
+        constexpr double MIN_NOISE_VAR = 1e-10;
+        // DMRS Type1 power boost: beta=sqrt(2), so |x|^2=2, h_ls noise variance = sigma^2/2
+        // Second-order difference (internal SC): E[|noise|^2] = 3/2 * (sigma^2/2) = 3/4 sigma^2 -> scale by 4/3
+        // First-order difference (edge SC): E[|noise|^2] = 2 * (sigma^2/2) = sigma^2 -> scale by 1.0
+        constexpr double SCALE_INTERNAL = 4.0 / 3.0;
+        constexpr double SCALE_EDGE = 1.0;
+
         int ref_tx_ant = std::min(n_tx_ant, n_layers);
         for (int dmrs_sym : dmrs_symbols) {
             for (int rx = 0; rx < n_rx_ant; rx++) {
@@ -127,6 +137,40 @@ public:
                         }
                     }
 
+                    if (dmrs_sc.size() >= 2) {
+                        {
+                            int sc_first = dmrs_sc[0];
+                            int sc_next = dmrs_sc[1];
+                            Complex h_first = h_est(sc_first, dmrs_sym, ch_idx);
+                            Complex h_next = h_est(sc_next, dmrs_sym, ch_idx);
+                            Complex noise_sample = h_next - h_first;
+                            noise_power_sum += SCALE_EDGE * std::norm(noise_sample);
+                            noise_sample_count++;
+                        }
+
+                        for (size_t i = 1; i + 1 < dmrs_sc.size(); i++) {
+                            int sc_prev = dmrs_sc[i - 1];
+                            int sc_curr = dmrs_sc[i];
+                            int sc_next = dmrs_sc[i + 1];
+                            Complex h_prev = h_est(sc_prev, dmrs_sym, ch_idx);
+                            Complex h_curr = h_est(sc_curr, dmrs_sym, ch_idx);
+                            Complex h_next = h_est(sc_next, dmrs_sym, ch_idx);
+                            Complex noise_sample = (h_prev + h_next) / 2.0 - h_curr;
+                            noise_power_sum += SCALE_INTERNAL * std::norm(noise_sample);
+                            noise_sample_count++;
+                        }
+
+                        {
+                            int sc_last = dmrs_sc.back();
+                            int sc_prev = dmrs_sc[dmrs_sc.size() - 2];
+                            Complex h_last = h_est(sc_last, dmrs_sym, ch_idx);
+                            Complex h_prev = h_est(sc_prev, dmrs_sym, ch_idx);
+                            Complex noise_sample = h_prev - h_last;
+                            noise_power_sum += SCALE_EDGE * std::norm(noise_sample);
+                            noise_sample_count++;
+                        }
+                    }
+
                     int cdm_group_size = 2;
                     for (size_t i = 0; i + 1 < dmrs_sc.size(); i += cdm_group_size) {
                         size_t j = i + 1;
@@ -142,6 +186,13 @@ public:
                     interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_idx, n_sc);
                 }
             }
+        }
+
+        if (noise_sample_count > 0) {
+            double avg_noise_power = noise_power_sum / noise_sample_count;
+            estimated_noise_var_ = std::max(avg_noise_power, MIN_NOISE_VAR);
+        } else {
+            estimated_noise_var_ = MIN_NOISE_VAR;
         }
         
         for (int rx = 0; rx < n_rx_ant; rx++) {
@@ -187,6 +238,13 @@ public:
     std::string get_name() const override {
         return "LS";
     }
+
+    double get_estimated_noise_var() const override {
+        return estimated_noise_var_;
+    }
+
+private:
+    double estimated_noise_var_ = 0.0;
 };
 
 std::unique_ptr<IChannelEstimator> create_ls_channel_estimator() {

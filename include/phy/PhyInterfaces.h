@@ -79,6 +79,7 @@ public:
     virtual ComplexCube estimate(const ResourceGrid& rx_grid, const ResourceGrid& dmrs_grid,
                                  const SimulationConfig& config) = 0;
     virtual std::string get_name() const = 0;
+    virtual double get_estimated_noise_var() const { return 0.0; }
 };
 
 class IEqualizer {
