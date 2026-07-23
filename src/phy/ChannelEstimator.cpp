@@ -247,8 +247,66 @@ private:
     double estimated_noise_var_ = 0.0;
 };
 
+class PerfectChannelEstimator : public IChannelEstimator {
+public:
+    ComplexCube estimate(const ResourceGrid& rx_grid, const ResourceGrid& /*dmrs_grid*/,
+                         const SimulationConfig& config) override {
+        int n_sc = rx_grid.n_subcarriers;
+        int n_sym = rx_grid.n_symbols;
+        int n_rx_ant = rx_grid.n_ant;
+        int n_layers = config.n_layers;
+        int n_ch = n_rx_ant * n_layers;
+
+        ComplexCube h_est(n_sc, n_sym, n_ch, arma::fill::zeros);
+
+        if (perfect_h_.n_rows == static_cast<arma::uword>(n_sc) &&
+            perfect_h_.n_cols == static_cast<arma::uword>(n_sym) &&
+            perfect_h_.n_slices == static_cast<arma::uword>(n_ch)) {
+            h_est = perfect_h_;
+        } else {
+            for (int rx = 0; rx < n_rx_ant; rx++) {
+                for (int l = 0; l < n_layers; l++) {
+                    int ch_idx = rx * n_layers + l;
+                    for (int sc = 0; sc < n_sc; sc++) {
+                        for (int sym = 0; sym < n_sym; sym++) {
+                            if (rx == l) {
+                                h_est(sc, sym, ch_idx) = Complex(1.0, 0.0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        noise_var_ = perfect_noise_var_;
+        return h_est;
+    }
+
+    std::string get_name() const override {
+        return "Perfect";
+    }
+
+    double get_estimated_noise_var() const override {
+        return noise_var_;
+    }
+
+    void set_perfect_channel(const ComplexCube& h, double noise_var) override {
+        perfect_h_ = h;
+        perfect_noise_var_ = noise_var;
+    }
+
+private:
+    ComplexCube perfect_h_;
+    double perfect_noise_var_ = 0.0;
+    double noise_var_ = 0.0;
+};
+
 std::unique_ptr<IChannelEstimator> create_ls_channel_estimator() {
     return std::make_unique<LsChannelEstimator>();
+}
+
+std::unique_ptr<IChannelEstimator> create_perfect_channel_estimator() {
+    return std::make_unique<PerfectChannelEstimator>();
 }
 
 } // namespace phy

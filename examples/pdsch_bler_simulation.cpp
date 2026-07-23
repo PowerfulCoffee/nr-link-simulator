@@ -20,11 +20,15 @@ int main(int argc, char* argv[]) {
     double sinr_step = 1.0;
     int max_blocks = 200;
     int target_errors = 30;
+    bool perfect_csi = false;
     
     if (argc > 1) mcs = atoi(argv[1]);
     if (argc > 2) sinr_start = atof(argv[2]);
     if (argc > 3) sinr_end = atof(argv[3]);
     if (argc > 4) sinr_step = atof(argv[4]);
+    if (argc > 5) perfect_csi = atoi(argv[5]) != 0;
+    if (argc > 6) max_blocks = atoi(argv[6]);
+    if (argc > 7) target_errors = atoi(argv[7]);
     
     SimulationConfig config;
     config.mcs_index = mcs;
@@ -44,9 +48,10 @@ int main(int argc, char* argv[]) {
     config.dmrs_type = DmrsType::TYPE1;
     config.dmrs_additional_pos = 0;
     config.dmrs_duration = 1;
+    config.perfect_csi = perfect_csi;
     
     std::cout << "========================================\n";
-    std::cout << "  NR PDSCH BLER Simulation (OFDM Path)\n";
+    std::cout << "  NR PDSCH BLER Simulation (" << (perfect_csi ? "Perfect CE" : "LS-CE") << ")\n";
     std::cout << "========================================\n";
     std::cout << "Configuration:\n";
     std::cout << "  MCS Index:        " << config.mcs_index << "\n";
@@ -57,9 +62,10 @@ int main(int argc, char* argv[]) {
     std::cout << "  Max blocks/SINR:  " << config.max_blocks_per_sinr << "\n";
     std::cout << "  Target errors:    " << config.target_block_errors << "\n";
     std::cout << "  DMRS:             Type1, single symbol, pos=2\n";
+    std::cout << "  Channel Est:      " << (perfect_csi ? "Ideal/Perfect" : "LS + noise est") << "\n";
     std::cout << "========================================\n\n";
     
-    std::vector<BlerResult> results = run_bler_simulation(config, nullptr, "LS");
+    std::vector<BlerResult> results = run_bler_simulation(config, nullptr, perfect_csi ? "Perfect" : "LS");
     
     std::cout << "\n========================================\n";
     std::cout << "  Results Summary\n";

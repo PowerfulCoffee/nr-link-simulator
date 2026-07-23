@@ -18,6 +18,7 @@ std::unique_ptr<IDmrsGenerator> create_dmrs_generator();
 std::unique_ptr<IResourceMapper> create_resource_mapper();
 std::unique_ptr<IOfdmModulator> create_ofdm_modulator();
 std::unique_ptr<IChannelEstimator> create_ls_channel_estimator();
+std::unique_ptr<IChannelEstimator> create_perfect_channel_estimator();
 std::unique_ptr<IEqualizer> create_mmse_equalizer();
 
 }

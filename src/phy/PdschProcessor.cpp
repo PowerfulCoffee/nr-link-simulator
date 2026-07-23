@@ -229,7 +229,11 @@ void PdschProcessor::init_default_modules() {
     resource_mapper_ = create_resource_mapper();
     ofdm_modulator_ = create_ofdm_modulator();
     equalizer_ = create_mmse_equalizer();
-    channel_estimator_ = create_ls_channel_estimator();
+    if (config_.perfect_csi) {
+        channel_estimator_ = create_perfect_channel_estimator();
+    } else {
+        channel_estimator_ = create_ls_channel_estimator();
+    }
     channel_model_ = channel::create_channel(config_.channel_type);
     channel_model_->set_config(config_);
 }
@@ -643,22 +647,8 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
     int n_sc = n_pdsch_rbs_ * 12;
     int n_sym = get_symbols_per_slot();
 
-    bool fast_awgn = (config_.perfect_csi &&
-                      config_.channel_type == ChannelType::AWGN &&
-                      config_.n_tx_ant == 1 && config_.n_rx_ant == 1 && config_.n_layers == 1);
-
-    bool fast_fading = (config_.perfect_csi &&
-                        (config_.channel_type == ChannelType::TDL_A ||
-                         config_.channel_type == ChannelType::TDL_B ||
-                         config_.channel_type == ChannelType::TDL_C ||
-                         config_.channel_type == ChannelType::TDL_D ||
-                         config_.channel_type == ChannelType::TDL_E ||
-                         config_.channel_type == ChannelType::CDL_A ||
-                         config_.channel_type == ChannelType::CDL_B ||
-                         config_.channel_type == ChannelType::CDL_C ||
-                         config_.channel_type == ChannelType::CDL_D ||
-                         config_.channel_type == ChannelType::CDL_E) &&
-                        config_.n_tx_ant == 1 && config_.n_rx_ant == 1 && config_.n_layers == 1);
+    bool fast_awgn = false;
+    bool fast_fading = false;
 
     double sinr_lin = std::pow(10.0, sinr_db / 10.0);
     double noise_var = 1.0 / sinr_lin;
@@ -812,6 +802,11 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
             ResourceGrid demod_grid = ofdm_modulator_->demodulate(rx_signal, n_rx_ant,
                                                                   config_.scs, n_sym);
             ResourceGrid rx_grid = fix_ofdm_demod_grid(demod_grid, n_rx_ant, n_sym, n_sc);
+
+            if (config_.perfect_csi) {
+                channel_estimator_->set_perfect_channel(h, noise_var_slow);
+            }
+
             rx_res = receive(rx_grid, tx_res, sinr_db, block);
         }
 
