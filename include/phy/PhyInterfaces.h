@@ -80,6 +80,7 @@ public:
                                  const SimulationConfig& config) = 0;
     virtual std::string get_name() const = 0;
     virtual double get_estimated_noise_var() const { return 0.0; }
+    virtual double get_estimated_doppler() const { return 0.0; }
     virtual void set_perfect_channel(const ComplexCube& /*h*/, double /*noise_var*/) {}
 };
 

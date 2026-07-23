@@ -1,123 +1,128 @@
-import numpy as np
+#!/usr/bin/env python3
+"""
+Plot SNR vs BLER comparison for 4 MCS levels in a 2x2 grid
+Methods: Ideal CE (Perfect), C++ LS-Doppler, Sionna LS (no Doppler)
+"""
+import csv
+import os
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import csv
-import os
-from scipy import stats
+import numpy as np
+from pathlib import Path
 
-def load_csv(path):
-    sinr = []
-    bler = []
-    nblocks = []
-    nerrors = []
-    with open(path, 'r') as f:
+plt.rcParams.update({
+    'font.size': 11,
+    'axes.labelsize': 12,
+    'axes.titlesize': 13,
+    'legend.fontsize': 9,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+})
+
+RESULTS_DIR = Path("/workspace/nr-link-simulator/scripts/results/tdl_doppler")
+
+MCS_INFO = {
+    3:  {"name": "QPSK (MCS 3)",  "mod": "QPSK",  "R": 0.27},
+    10: {"name": "16QAM (MCS 10)", "mod": "16QAM", "R": 0.50},
+    17: {"name": "64QAM (MCS 17)", "mod": "64QAM", "R": 0.62},
+    27: {"name": "64QAM high-rate (MCS 27)", "mod": "64QAM (high R)", "R": 0.89},
+}
+
+METHODS = [
+    ("cpp_perfect",        "C++ Ideal CE",        "-",  "o", "#1f77b4", 1.5, 6),
+    ("cpp_ls_doppler",     "C++ LS + Doppler",    "--", "s", "#2ca02c", 1.5, 6),
+    ("sionna_perfect",     "Sionna Ideal CE",     ":",  "^", "#1f77b4", 2.0, 6),
+    ("sionna_ls_nodoppler","Sionna LS (no Doppler)", "-.", "v", "#d62728", 1.5, 6),
+]
+
+def load_csv(filepath):
+    snr, bler = [], []
+    if not filepath.exists():
+        return None, None
+    with open(filepath) as f:
         reader = csv.DictReader(f)
         for row in reader:
-            sinr.append(float(row['SINR_dB']))
-            bler.append(float(row['BLER']))
-            nblocks.append(int(row['Blocks']))
-            nerrors.append(int(row['Errors']))
-    return np.array(sinr), np.array(bler), np.array(nblocks), np.array(nerrors)
+            try:
+                s = float(row['SINR_dB'])
+                b = float(row['BLER'])
+                n = int(row['Blocks'])
+                if n >= 30 and b <= 1.0:
+                    snr.append(s)
+                    bler.append(b)
+            except:
+                pass
+    return np.array(snr), np.array(bler)
 
-def binomial_ci(k, n, confidence=0.95):
-    if n == 0:
-        return 0.0, 0.0
-    p_hat = k / n
-    if k == 0:
-        lower = 0.0
-        upper = 1 - (1 - confidence) ** (1 / n)
-    elif k == n:
-        lower = (1 - confidence) ** (1 / n)
-        upper = 1.0
-    else:
-        alpha = 1 - confidence
-        z = stats.norm.ppf(1 - alpha / 2)
-        se = np.sqrt(p_hat * (1 - p_hat) / n)
-        lower = max(0.0, p_hat - z * se)
-        upper = min(1.0, p_hat + z * se)
-    return p_hat - lower, upper - p_hat
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+axes = axes.flatten()
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_dir = os.path.abspath(os.path.join(script_dir, '..'))
-results_dir = os.path.join(project_dir, 'results')
-output_dir = os.path.join(project_dir, 'output')
+mcs_list = [3, 10, 17, 27]
 
-cpp_tdla_path = os.path.join(results_dir, 'bler_mcs27_tdla_perfect_csi.csv')
-sionna_tdla_path = os.path.join(results_dir, 'sionna_mcs27_tdla_perfect_csi.csv')
+plot_data = {}
+for mcs in mcs_list:
+    plot_data[mcs] = {}
+    for method_key, _, _, _, _, _, _ in METHODS:
+        f = RESULTS_DIR / f"{method_key}_mcs{mcs}.csv"
+        snr, bler = load_csv(f)
+        if snr is not None and len(snr) > 0:
+            plot_data[mcs][method_key] = (snr, bler)
 
-fig, ax = plt.subplots(1, 1, figsize=(11, 8))
+for idx, mcs in enumerate(mcs_list):
+    ax = axes[idx]
+    info = MCS_INFO[mcs]
+    
+    for method_key, label, ls, marker, color, lw, ms in METHODS:
+        if method_key in plot_data[mcs]:
+            snr, bler = plot_data[mcs][method_key]
+            if len(snr) > 0:
+                ax.semilogy(snr, bler, label=label, linestyle=ls, marker=marker,
+                           color=color, linewidth=lw, markersize=ms, markevery=max(1, len(snr)//10))
+    
+    ax.set_xlabel('SNR (dB)')
+    ax.set_ylabel('BLER')
+    ax.set_title(f"{info['name']}, R≈{info['R']}", fontweight='bold')
+    ax.grid(True, which='both', alpha=0.3, linestyle='-')
+    ax.set_ylim([0.008, 1.0])
+    ax.axhline(y=0.1, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    ax.text(ax.get_xlim()[0]+0.5 if ax.get_xlim()[0] < ax.get_xlim()[1] else 0, 0.12, 'BLER=0.1', 
+            fontsize=8, color='gray', alpha=0.7)
+    ax.legend(loc='lower left', framealpha=0.9)
 
-if os.path.exists(cpp_tdla_path):
-    sinr_cpp, bler_cpp, n_cpp, k_cpp = load_csv(cpp_tdla_path)
-    err_low = np.zeros_like(bler_cpp)
-    err_high = np.zeros_like(bler_cpp)
-    for i in range(len(bler_cpp)):
-        el, eh = binomial_ci(k_cpp[i], n_cpp[i])
-        err_low[i] = el
-        err_high[i] = eh
-    ax.errorbar(sinr_cpp, bler_cpp, yerr=[err_low, err_high],
-                fmt='bo-', linewidth=2, markersize=7, capsize=4,
-                label='C++ nr-link-simulator (TDL-A, perfect CSI)',
-                markerfacecolor='blue', markeredgecolor='blue', ecolor='blue', elinewidth=1)
-    for i in range(len(bler_cpp)):
-        ax.annotate(f'{k_cpp[i]}/{n_cpp[i]}',
-                    (sinr_cpp[i], bler_cpp[i]),
-                    textcoords="offset points", xytext=(8, 8),
-                    fontsize=7, color='blue', alpha=0.7)
-
-if os.path.exists(sionna_tdla_path):
-    sinr_sio, bler_sio, n_sio, k_sio = load_csv(sionna_tdla_path)
-    ax.semilogy(sinr_sio, bler_sio, 'rs--', linewidth=2, markersize=8,
-                label='Sionna 2.x (TDL-A, perfect CSI)')
-    for i in range(len(bler_sio)):
-        ax.annotate(f'{k_sio[i]}/{n_sio[i]}',
-                    (sinr_sio[i], bler_sio[i]),
-                    textcoords="offset points", xytext=(8, -12),
-                    fontsize=7, color='red', alpha=0.7)
-
-awgn_path = os.path.join(results_dir, 'bler_mcs27_awgn.csv')
-if os.path.exists(awgn_path):
-    sinr_awgn, bler_awgn, n_awgn, k_awgn = load_csv(awgn_path)
-    ax.semilogy(sinr_awgn, bler_awgn, 'g^-', linewidth=2, markersize=7,
-                label='C++ AWGN SISO (reference)')
-
-ax.set_xlabel('Es/N0 (dB)', fontsize=13)
-ax.set_ylabel('BLER (log scale)', fontsize=13)
-ax.set_title('NR PDSCH MCS27 BLER vs Es/N0\n'
-             '(3 PRB, 15kHz SCS, 64QAM R=910/1024, TBS=2472, LDPC 20 iter, Offset Min-Sum)',
-             fontsize=12)
-ax.set_yscale('log')
-ax.set_ylim([5e-4, 1.0])
-ax.set_xlim([18, 42])
-ax.grid(True, which='both', linestyle='--', alpha=0.7)
-ax.axhline(y=0.1, color='gray', linestyle=':', alpha=0.5)
-ax.text(41.5, 0.11, 'BLER=0.1', ha='right', fontsize=9, color='gray')
-
-ax.text(0.02, 0.02,
-        'Bars: 95% binomial confidence interval\n'
-        'Labels: errors/total blocks\n'
-        'Note: At BLER ≈ 0.001-0.002 with N=1000 blocks,\n'
-        'only 1-2 errors are observed; statistical\n'
-        'uncertainty is large. The apparent uptick at\n'
-        '38-40 dB is within noise.',
-        transform=ax.transAxes, fontsize=8, verticalalignment='bottom',
-        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-
-ax.legend(fontsize=10, loc='lower left')
+fig.suptitle(
+    'TDL-A Channel Performance Comparison\n'
+    'DS=100ns, $f_d$=70Hz, 3PRB SISO, DMRS Type1 add-pos=1 (dual DMRS)\n'
+    'Ideal CE vs C++ LS with Doppler estimation/compensation vs Sionna LS (linear interp only)',
+    fontsize=13, fontweight='bold', y=1.02
+)
 
 plt.tight_layout()
-out_path = os.path.join(output_dir, 'bler_mcs27_waterfall.png')
+out_path = "/workspace/nr-link-simulator/scripts/results/tdl_doppler/bler_comparison_grid.png"
 plt.savefig(out_path, dpi=150, bbox_inches='tight')
 print(f"Plot saved to {out_path}")
 
-print("\n=== Summary ===")
-if os.path.exists(cpp_tdla_path):
-    print("C++ TDL-A results (errors/blocks = BLER, 95% CI):")
-    for i, (s, b) in enumerate(zip(sinr_cpp, bler_cpp)):
-        el, eh = binomial_ci(k_cpp[i], n_cpp[i])
-        print(f"  Es/N0={s:5.1f} dB  {k_cpp[i]:3d}/{n_cpp[i]:5d}  BLER={b:.4f}  [{b-el:.4f}, {b+eh:.4f}]")
-if os.path.exists(sionna_tdla_path):
-    print("\nSionna TDL-A results:")
-    for s, b in zip(sinr_sio, bler_sio):
-        print(f"  Es/N0={s:5.1f} dB  BLER={b:.4f}")
+print("\n" + "="*70)
+print("PERFORMANCE SUMMARY (SNR required for BLER = 0.1)")
+print("="*70)
+for mcs in mcs_list:
+    info = MCS_INFO[mcs]
+    print(f"\n{info['name']} (R≈{info['R']}):")
+    for method_key, label, _, _, _, _, _ in METHODS:
+        if method_key in plot_data[mcs]:
+            snr, bler = plot_data[mcs][method_key]
+            if len(snr) > 1:
+                bler = np.array(bler)
+                snr = np.array(snr)
+                sort_idx = np.argsort(snr)
+                snr_s = snr[sort_idx]
+                bler_s = bler[sort_idx]
+                if bler_s[0] > 0.1 and bler_s[-1] < 0.1:
+                    snr_at_01 = np.interp(0.1, bler_s[::-1], snr_s[::-1])
+                    print(f"  {label:30s}: {snr_at_01:5.1f} dB")
+                elif bler_s[-1] >= 0.1:
+                    above_idx = np.where(bler_s < 0.15)[0]
+                    if len(above_idx) > 0:
+                        snr_est = snr_s[above_idx[0]]
+                        print(f"  {label:30s}: ~{snr_est:4.1f} dB (BLER≈{bler_s[above_idx[0]]:.2f} at highest SNR)")
+                    else:
+                        print(f"  {label:30s}: >{snr_s[-1]:.1f} dB (BLER={bler_s[-1]:.3f})")

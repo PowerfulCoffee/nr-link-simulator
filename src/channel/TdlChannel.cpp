@@ -18,6 +18,12 @@ int get_cp_len(int fft_size, bool is_first) {
     return is_first ? cp + 16 * fft_size / 2048 : cp;
 }
 
+double get_ofdm_symbol_duration(int fft_size, double scs, bool is_first) {
+    double tu = 1.0 / scs;
+    int cp = get_cp_len(fft_size, is_first);
+    return tu * (fft_size + cp) / fft_size;
+}
+
 }
 
 TdlChannel::TdlChannel(ChannelType type) : type_(type), seed_(12345), rng_(12345) {
@@ -116,36 +122,65 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
     int n_rx_ant = config_.n_rx_ant;
     int n_tx_ant = std::min(config_.n_tx_ant, config_.n_layers);
     int n_layers = config_.n_layers;
+    int fft_size = get_fft_size(n_sc);
     
     ComplexCube h(n_sc, n_symbols, n_rx_ant * n_layers, arma::fill::zeros);
     
     std::normal_distribution<double> dist(0.0, 1.0);
+    std::uniform_real_distribution<double> uniform_dist(0.0, 2.0 * M_PI);
     
-    double max_delay = 0.0;
-    for (int i = 0; i < tdl_params_.n_taps; i++) {
-        max_delay = std::max(max_delay, tdl_params_.norm_delay[i] * config_.delay_spread);
+    double fd = config_.max_doppler;
+    double pwr_sum = 0.0;
+    for (int t = 0; t < tdl_params_.n_taps; t++) {
+        pwr_sum += tdl_params_.norm_pwr[t];
     }
     
-    for (int sym = 0; sym < n_symbols; sym++) {
-        for (int rx = 0; rx < n_rx_ant; rx++) {
-            for (int l = 0; l < n_layers; l++) {
+    struct TapTimeInfo {
+        Complex init_coeff;
+        double cos_aoa;
+        double doppler_phase;
+    };
+    
+    for (int rx = 0; rx < n_rx_ant; rx++) {
+        for (int l = 0; l < n_layers; l++) {
+            std::vector<TapTimeInfo> tap_info(tdl_params_.n_taps);
+            
+            for (int t = 0; t < tdl_params_.n_taps; t++) {
+                double re = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
+                double im = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
+                tap_info[t].init_coeff = Complex(re, im);
+                
+                if (fd > 0.0) {
+                    double aoa = uniform_dist(rng_);
+                    tap_info[t].cos_aoa = std::cos(aoa);
+                    tap_info[t].doppler_phase = uniform_dist(rng_);
+                } else {
+                    tap_info[t].cos_aoa = 0.0;
+                    tap_info[t].doppler_phase = 0.0;
+                }
+            }
+            
+            if (tdl_params_.los && rx == l) {
+                double k_lin = std::pow(10.0, tdl_params_.k_factor_dB / 10.0);
+                double los_scale = std::sqrt(k_lin / (k_lin + 1.0));
+                double nlos_scale = std::sqrt(1.0 / (k_lin + 1.0));
+                tap_info[0].init_coeff = tap_info[0].init_coeff * nlos_scale + Complex(los_scale, 0.0);
+                tap_info[0].cos_aoa = 1.0;
+                tap_info[0].doppler_phase = 0.0;
+            }
+            
+            double t_start = 0.0;
+            for (int sym = 0; sym < n_symbols; sym++) {
+                bool is_first = (sym == 0);
+                double sym_dur = get_ofdm_symbol_duration(fft_size, config_.scs, is_first);
+                double t_mid = t_start + sym_dur / 2.0;
+                
                 ComplexMat tap_coeffs(tdl_params_.n_taps, 1);
-                double pwr_sum = 0.0;
                 for (int t = 0; t < tdl_params_.n_taps; t++) {
-                    pwr_sum += tdl_params_.norm_pwr[t];
-                }
-                
-                for (int t = 0; t < tdl_params_.n_taps; t++) {
-                    double re = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
-                    double im = dist(rng_) * std::sqrt(tdl_params_.norm_pwr[t] / (2.0 * pwr_sum));
-                    tap_coeffs(t, 0) = Complex(re, im);
-                }
-                
-                if (tdl_params_.los && rx == l) {
-                    double k_lin = std::pow(10.0, tdl_params_.k_factor_dB / 10.0);
-                    double los_scale = std::sqrt(k_lin / (k_lin + 1.0));
-                    double nlos_scale = std::sqrt(1.0 / (k_lin + 1.0));
-                    tap_coeffs(0, 0) = tap_coeffs(0, 0) * nlos_scale + Complex(los_scale, 0.0);
+                    double tap_fd = fd * tap_info[t].cos_aoa;
+                    double phase = 2.0 * M_PI * tap_fd * t_mid + tap_info[t].doppler_phase;
+                    Complex doppler_rot(std::cos(phase), std::sin(phase));
+                    tap_coeffs(t, 0) = tap_info[t].init_coeff * doppler_rot;
                 }
                 
                 for (int sc = 0; sc < n_sc; sc++) {
@@ -164,6 +199,8 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
                     }
                     h(sc, sym, rx * n_layers + l) = h_freq;
                 }
+                
+                t_start += sym_dur;
             }
         }
     }
