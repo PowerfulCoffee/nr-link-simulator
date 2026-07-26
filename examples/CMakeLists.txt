@@ -98,6 +98,22 @@ add_executable(print_tbs print_tbs.cpp)
 target_link_libraries(print_tbs PRIVATE nr_phy)
 target_include_directories(print_tbs PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+add_executable(cross_check_components cross_check_components.cpp)
+target_link_libraries(cross_check_components PRIVATE nr_phy)
+target_include_directories(cross_check_components PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(test_llr test_llr.cpp)
+target_link_libraries(test_llr PRIVATE nr_phy)
+target_include_directories(test_llr PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(cross_check_cpp cross_check_cpp.cpp)
+target_link_libraries(cross_check_cpp PRIVATE nr_phy)
+target_include_directories(cross_check_cpp PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(test_qpsk_bler test_qpsk_bler.cpp)
+target_link_libraries(test_qpsk_bler PRIVATE nr_phy)
+target_include_directories(test_qpsk_bler PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
 if(OpenMP_CXX_FOUND)
     target_link_libraries(pdsch_bler_simulation PRIVATE OpenMP::OpenMP_CXX)
     target_link_libraries(test_bler PRIVATE OpenMP::OpenMP_CXX)

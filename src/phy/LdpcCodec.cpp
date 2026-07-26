@@ -281,9 +281,9 @@ public:
 namespace {
 
 inline double phi(double x) {
-    if (x < 1e-8) return 1e8;
-    if (x > 40.0) return 0.0;
-    return -std::log(std::tanh(x / 2.0));
+    if (x < 8.5e-8) return 16.635532;
+    if (x > 16.635532) return 0.0;
+    return std::log(std::exp(x) + 1.0) - std::log(std::exp(x) - 1.0);
 }
 
 }
@@ -313,21 +313,26 @@ public:
         int n_pcb = 2 * zc;
         int in_len = (int)llr_in.size();
 
+        auto clip_and_neg = [&](double v) {
+            v = std::max(-llr_max, std::min(llr_max, v));
+            return -v;
+        };
+
         if (in_len == N - n_pcb) {
             for (int i = 0; i < in_len; i++) {
-                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                double v = clip_and_neg(llr_in[i]);
                 ch_llr_[n_pcb + i] = v;
                 post_[n_pcb + i] = v;
             }
         } else if (in_len >= N) {
             for (int i = 0; i < N; i++) {
-                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                double v = clip_and_neg(llr_in[i]);
                 ch_llr_[i] = v;
                 post_[i] = v;
             }
         } else {
             for (int i = 0; i < in_len; i++) {
-                double v = std::max(-llr_max, std::min(llr_max, llr_in[i]));
+                double v = clip_and_neg(llr_in[i]);
                 ch_llr_[i] = v;
                 post_[i] = v;
             }

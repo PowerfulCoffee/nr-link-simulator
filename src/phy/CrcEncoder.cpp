@@ -33,19 +33,11 @@ public:
         }
         
         uint32_t crc = 0;
-        // Process all information bits
         for (int i = 0; i < n; i++) {
             uint32_t msb = (crc >> (crc_len - 1)) & 1;
-            crc = ((crc << 1) | bits[i]) & mask;
-            if (msb) {
-                crc ^= poly;
-            }
-        }
-        // Process crc_len zeros to flush the register
-        for (int i = 0; i < crc_len; i++) {
-            uint32_t msb = (crc >> (crc_len - 1)) & 1;
+            uint32_t feedback = msb ^ bits[i];
             crc = (crc << 1) & mask;
-            if (msb) {
+            if (feedback) {
                 crc ^= poly;
             }
         }

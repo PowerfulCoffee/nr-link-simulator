@@ -45,22 +45,56 @@ double qam_norm(int m_per_dim) {
     return 1.0 / std::sqrt(2.0 * ms);
 }
 
-void pam_demod_3gpp(double y, double var_per_dim, double a, int m, double* llr_out) {
+inline double logsumexp(const double* vals, int n) {
+    if (n <= 0) return -1e30;
+    double max_val = vals[0];
+    for (int i = 1; i < n; i++) {
+        if (vals[i] > max_val) max_val = vals[i];
+    }
+    if (max_val < -500.0) return max_val;
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        double d = vals[i] - max_val;
+        if (d > -50.0) {
+            sum += std::exp(d);
+        }
+    }
+    return max_val + std::log(sum);
+}
+
+void pam_demod_app(double y, double var_per_dim, double a, int m, double* llr_out) {
     int M = 1 << m;
+    int half_M = M / 2;
+    std::vector<double> s_vals(M);
+    uint8_t bits[8];
+    for (int k = 0; k < M; k++) {
+        for (int i = 0; i < m; i++) {
+            bits[i] = (k >> (m - 1 - i)) & 1;
+        }
+        s_vals[k] = pam_gray_3gpp(bits, m) * a;
+    }
+
+    double two_var = 2.0 * var_per_dim;
+    std::vector<double> exps0(half_M);
+    std::vector<double> exps1(half_M);
+
     for (int b = 0; b < m; b++) {
-        double d0 = 1e30, d1 = 1e30;
+        int cnt0 = 0, cnt1 = 0;
         for (int k = 0; k < M; k++) {
-            uint8_t bits[8];
             for (int i = 0; i < m; i++) {
                 bits[i] = (k >> (m - 1 - i)) & 1;
             }
-            double s = pam_gray_3gpp(bits, m) * a;
-            double dist = (y - s) * (y - s);
-            int bit_val = bits[b];
-            if (bit_val == 0) { if (dist < d0) d0 = dist; }
-            else              { if (dist < d1) d1 = dist; }
+            double dist = (y - s_vals[k]) * (y - s_vals[k]);
+            double exponent = -dist / two_var;
+            if (bits[b] == 0) {
+                exps0[cnt0++] = exponent;
+            } else {
+                exps1[cnt1++] = exponent;
+            }
         }
-        llr_out[b] = (d1 - d0) / (2.0 * var_per_dim);
+        double lse0 = logsumexp(exps0.data(), cnt0);
+        double lse1 = logsumexp(exps1.data(), cnt1);
+        llr_out[b] = lse1 - lse0;
     }
 }
 
@@ -141,20 +175,20 @@ public:
             double nv = (i < (int)noise_vars.size()) ? noise_vars[i] : noise_vars.back();
             double var_per_dim = std::max(nv / 2.0, 1e-12);
             if (scheme == ModulationScheme::BPSK) {
-                llr[i] = 2.0 * sym(i).real() / var_per_dim;
+                llr[i] = -2.0 * sym(i).real() / var_per_dim;
             } else if (scheme == ModulationScheme::QPSK) {
                 double a = 1.0 / std::sqrt(2.0);
                 double lr[1], li[1];
-                pam_demod_3gpp(sym(i).real(), var_per_dim, a, 1, lr);
-                pam_demod_3gpp(sym(i).imag(), var_per_dim, a, 1, li);
+                pam_demod_app(sym(i).real(), var_per_dim, a, 1, lr);
+                pam_demod_app(sym(i).imag(), var_per_dim, a, 1, li);
                 llr[2*i]   = lr[0];
                 llr[2*i+1] = li[0];
             } else if (scheme == ModulationScheme::QAM16) {
                 int m = 2;
                 double a = qam_norm(m);
                 double lr[2], li[2];
-                pam_demod_3gpp(sym(i).real(), var_per_dim, a, m, lr);
-                pam_demod_3gpp(sym(i).imag(), var_per_dim, a, m, li);
+                pam_demod_app(sym(i).real(), var_per_dim, a, m, lr);
+                pam_demod_app(sym(i).imag(), var_per_dim, a, m, li);
                 llr[4*i]   = lr[0];
                 llr[4*i+2] = lr[1];
                 llr[4*i+1] = li[0];
@@ -163,8 +197,8 @@ public:
                 int m = 3;
                 double a = qam_norm(m);
                 double lr[3], li[3];
-                pam_demod_3gpp(sym(i).real(), var_per_dim, a, m, lr);
-                pam_demod_3gpp(sym(i).imag(), var_per_dim, a, m, li);
+                pam_demod_app(sym(i).real(), var_per_dim, a, m, lr);
+                pam_demod_app(sym(i).imag(), var_per_dim, a, m, li);
                 llr[6*i]   = lr[0];
                 llr[6*i+2] = lr[1];
                 llr[6*i+4] = lr[2];
@@ -175,8 +209,8 @@ public:
                 int m = 4;
                 double a = qam_norm(m);
                 double lr[4], li[4];
-                pam_demod_3gpp(sym(i).real(), var_per_dim, a, m, lr);
-                pam_demod_3gpp(sym(i).imag(), var_per_dim, a, m, li);
+                pam_demod_app(sym(i).real(), var_per_dim, a, m, lr);
+                pam_demod_app(sym(i).imag(), var_per_dim, a, m, li);
                 llr[8*i]   = lr[0];
                 llr[8*i+2] = lr[1];
                 llr[8*i+4] = lr[2];
@@ -188,8 +222,8 @@ public:
             } else {
                 double a = 1.0 / std::sqrt(2.0);
                 double lr[1], li[1];
-                pam_demod_3gpp(sym(i).real(), var_per_dim, a, 1, lr);
-                pam_demod_3gpp(sym(i).imag(), var_per_dim, a, 1, li);
+                pam_demod_app(sym(i).real(), var_per_dim, a, 1, lr);
+                pam_demod_app(sym(i).imag(), var_per_dim, a, 1, li);
                 llr[2*i]   = lr[0];
                 llr[2*i+1] = li[0];
             }

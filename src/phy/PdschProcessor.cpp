@@ -447,7 +447,7 @@ bool PdschProcessor::decode_transport_block(const SoftVec& descrambled_llr, cons
                 full_llr[n_punctured + i] = recovered_comp[i];
             }
             for (int i = 0; i < n_filler; i++) {
-                full_llr[cb_k_info + i] = LLR_CLIP;
+                full_llr[cb_k_info + i] = -LLR_CLIP;
             }
             for (int i = filler_start_comp; i < n_cb_comp; i++) {
                 int dst_idx = cb_k_info + n_filler + (i - filler_start_comp);
