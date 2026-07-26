@@ -13,11 +13,24 @@ const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_1 = {{
     {6, 567}, {6, 616}, {6, 666}, {6, 719}, {6, 772}, {6, 822}, {6, 873}, {6, 910}, {6, 948}
 }};
 
-ModulationScheme mcs_to_modulation(int mcs) {
+const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_2 = {{
+    {2, 120}, {2, 193}, {2, 308}, {2, 449}, {2, 602},
+    {4, 378}, {4, 434}, {4, 490}, {4, 553}, {4, 616}, {4, 658},
+    {6, 466}, {6, 517}, {6, 567}, {6, 616}, {6, 666}, {6, 719}, {6, 772}, {6, 822}, {6, 873},
+    {8, 682.5}, {8, 711}, {8, 754}, {8, 797}, {8, 841}, {8, 885}, {8, 916.5}, {8, 948},
+    {-1, 0}
+}};
+
+static inline const std::array<McsTableEntry, MAX_MCS_INDEX + 1>& get_mcs_table(int mcs_table) {
+    return (mcs_table == 2) ? MCS_TABLE_2 : MCS_TABLE_1;
+}
+
+ModulationScheme mcs_to_modulation(int mcs, int mcs_table) {
     if (mcs < 0 || mcs > MAX_MCS_INDEX) {
         return ModulationScheme::QPSK;
     }
-    int qm = MCS_TABLE_1[mcs].mod_order;
+    const auto& tbl = get_mcs_table(mcs_table);
+    int qm = tbl[mcs].mod_order;
     switch (qm) {
         case 1: return ModulationScheme::BPSK;
         case 2: return ModulationScheme::QPSK;
@@ -28,18 +41,21 @@ ModulationScheme mcs_to_modulation(int mcs) {
     }
 }
 
-double mcs_to_code_rate(int mcs) {
+double mcs_to_code_rate(int mcs, int mcs_table) {
     if (mcs < 0 || mcs > MAX_MCS_INDEX) {
         return 0.3;
     }
-    return MCS_TABLE_1[mcs].code_rate_x1024 / 1024.0;
+    const auto& tbl = get_mcs_table(mcs_table);
+    return tbl[mcs].code_rate_x1024 / 1024.0;
 }
 
-int mcs_to_bits_per_symbol(int mcs) {
+int mcs_to_bits_per_symbol(int mcs, int mcs_table) {
     if (mcs < 0 || mcs > MAX_MCS_INDEX) {
         return 2;
     }
-    return MCS_TABLE_1[mcs].mod_order;
+    const auto& tbl = get_mcs_table(mcs_table);
+    int qm = tbl[mcs].mod_order;
+    return (qm > 0) ? qm : 2;
 }
 
 int calculate_num_coded_bits(int n_prb, int n_re_per_prb, int qm, int n_layers) {

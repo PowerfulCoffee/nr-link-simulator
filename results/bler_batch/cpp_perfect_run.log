@@ -1,0 +1,12 @@
+=== C++ Perfect CE MCS  3 (Qm=2, R=0.245) SNR -5~3dB ===
+  SNR  -5.0dB: BLER=1.0000 (100/100)
+  SNR  -4.0dB: BLER=1.0000 (100/100)
+  SNR  -3.0dB: BLER=0.4300 (43/100)
+  SNR  -2.0dB: BLER=0.0000 (0/200)
+  SNR  -1.0dB: BLER=0.0000 (0/200)
+  SNR   0.0dB: BLER=0.0000 (0/200)
+  SNR   1.0dB: BLER=0.0000 (0/200)
+  SNR   2.0dB: BLER=0.0000 (0/200)
+  SNR   3.0dB: BLER=0.0000 (0/200)
+
+=== C++ Perfect CE MCS  4 (Qm=2, R=0.301) SNR -4~5dB ===

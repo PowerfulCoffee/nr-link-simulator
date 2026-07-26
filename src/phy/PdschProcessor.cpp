@@ -187,8 +187,8 @@ PdschProcessor::PdschProcessor(const SimulationConfig& config)
     config_.n_rx_ant = std::min(config_.n_rx_ant, config_.n_tx_ant > 1 ? 4 : 1);
 
     if (config_.mcs_index >= 0 && config_.mcs_index <= MAX_MCS_INDEX) {
-        config_.mod_scheme = mcs_to_modulation(config_.mcs_index);
-        config_.code_rate = mcs_to_code_rate(config_.mcs_index);
+        config_.mod_scheme = mcs_to_modulation(config_.mcs_index, config_.mcs_table);
+        config_.code_rate = mcs_to_code_rate(config_.mcs_index, config_.mcs_table);
     }
 
     pdsch_sym_alloc_.start = 0;
@@ -254,8 +254,8 @@ ComplexMat PdschProcessor::get_identity_precoding_matrix() {
 
 TransportBlock PdschProcessor::generate_transport_block() {
     int n_re_per_prb = count_pdsch_re_per_prb(dmrs_pattern_, config_, 0);
-    int qm = mcs_to_bits_per_symbol(config_.mcs_index);
-    double target_coderate = mcs_to_code_rate(config_.mcs_index);
+    int qm = mcs_to_bits_per_symbol(config_.mcs_index, config_.mcs_table);
+    double target_coderate = mcs_to_code_rate(config_.mcs_index, config_.mcs_table);
     int n_layers = config_.n_layers;
     
     int tbs = calculate_tbs(n_pdsch_rbs_, n_re_per_prb, qm, n_layers, target_coderate);
@@ -280,8 +280,8 @@ PdschTxResult PdschProcessor::transmit(const TransportBlock& tb, int slot_idx) {
     result.tb_bits_after_crc = bits_with_crc;
 
     int k_info = static_cast<int>(bits_with_crc.size());
-    double target_coderate = mcs_to_code_rate(config_.mcs_index);
-    int qm = mcs_to_bits_per_symbol(config_.mcs_index);
+    double target_coderate = mcs_to_code_rate(config_.mcs_index, config_.mcs_table);
+    int qm = mcs_to_bits_per_symbol(config_.mcs_index, config_.mcs_table);
     int n_re_per_prb = count_pdsch_re_per_prb(dmrs_pattern_, config_, slot_idx);
     int G = calculate_num_coded_bits(n_pdsch_rbs_, n_re_per_prb, qm, n_layers);
 

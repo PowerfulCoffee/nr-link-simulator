@@ -35,12 +35,13 @@ struct CodeBlockSegParams {
 constexpr int MAX_MCS_INDEX = 28;
 
 extern const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_1;
+extern const std::array<McsTableEntry, MAX_MCS_INDEX + 1> MCS_TABLE_2;
 
 LdpcParams select_ldpc_params(int k_info, double target_coderate);
 int get_crc_length(int tb_size);
-ModulationScheme mcs_to_modulation(int mcs);
-double mcs_to_code_rate(int mcs);
-int mcs_to_bits_per_symbol(int mcs);
+ModulationScheme mcs_to_modulation(int mcs, int mcs_table = 1);
+double mcs_to_code_rate(int mcs, int mcs_table = 1);
+int mcs_to_bits_per_symbol(int mcs, int mcs_table = 1);
 int mod_to_bits_per_symbol(ModulationScheme mod);
 
 int calculate_tbs(int n_prb, int n_re_per_prb, int qm, int n_layers, double target_coderate);

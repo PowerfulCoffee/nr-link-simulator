@@ -15,19 +15,21 @@ using namespace nr::channel;
 
 int main(int argc, char* argv[]) {
     int mcs = 10;
+    int mcs_table = 2;
     double sinr_start = 0.0;
     double sinr_end = 20.0;
     double sinr_step = 2.0;
-    int max_blocks = 100;
-    int target_errors = 30;
+    int max_blocks = 200;
+    int target_errors = 50;
     bool perfect_csi = false;
-    int n_rb = 25;
+    int n_rb = 30;
     int n_rx_ant = 4;
     int n_layers = 4;
     int channel_type_int = 1;
     double delay_spread = 100e-9;
-    double max_doppler = 70.0;
+    double max_doppler = 5.0;
     int dmrs_add_pos = 1;
+    int dmrs_duration = 0;
     std::string out_file = "";
     
     if (argc > 1) mcs = atoi(argv[1]);
@@ -44,7 +46,9 @@ int main(int argc, char* argv[]) {
     if (argc > 12) delay_spread = atof(argv[12]);
     if (argc > 13) max_doppler = atof(argv[13]);
     if (argc > 14) dmrs_add_pos = atoi(argv[14]);
-    if (argc > 15) out_file = argv[15];
+    if (argc > 15) dmrs_duration = atoi(argv[15]);
+    if (argc > 16) mcs_table = atoi(argv[16]);
+    if (argc > 17) out_file = argv[17];
     
     ChannelType ch_type;
     std::string ch_name;
@@ -62,6 +66,7 @@ int main(int argc, char* argv[]) {
     
     SimulationConfig config;
     config.mcs_index = mcs;
+    config.mcs_table = mcs_table;
     config.n_rb = n_rb;
     config.n_tx_ant = n_tx_ant;
     config.n_rx_ant = n_rx_ant;
@@ -76,26 +81,35 @@ int main(int argc, char* argv[]) {
     config.delay_spread = delay_spread;
     config.max_doppler = max_doppler;
     config.enable_los = (ch_type == ChannelType::TDL_D || ch_type == ChannelType::TDL_E);
-    config.mod_scheme = mcs_to_modulation(config.mcs_index);
-    config.code_rate = mcs_to_code_rate(config.mcs_index);
     config.dmrs_type = DmrsType::TYPE1;
     config.dmrs_additional_pos = dmrs_add_pos;
-    config.dmrs_duration = 1;
+    config.dmrs_duration = dmrs_duration;
     config.perfect_csi = perfect_csi;
+    config.n_ldpc_iterations = 20;
+    config.mod_scheme = mcs_to_modulation(config.mcs_index, config.mcs_table);
+    config.code_rate = mcs_to_code_rate(config.mcs_index, config.mcs_table);
+    
+    const char* mod_name = "QPSK";
+    int qm = mcs_to_bits_per_symbol(config.mcs_index, config.mcs_table);
+    if (qm == 2) mod_name = "QPSK";
+    else if (qm == 4) mod_name = "16QAM";
+    else if (qm == 6) mod_name = "64QAM";
+    else if (qm == 8) mod_name = "256QAM";
     
     std::cout << "========================================\n";
-    std::cout << "  NR PDSCH BLER TDL MIMO Simulation\n";
+    std::cout << "  NR PDSCH BLER TDL MIMO Simulation (C++ Cross-Check)\n";
     std::cout << "========================================\n";
     std::cout << "Configuration:\n";
-    std::cout << "  MCS Index:        " << config.mcs_index << " (" << (int)mcs_to_bits_per_symbol(config.mcs_index) << "QAM, R=" << config.code_rate << ")\n";
+    std::cout << "  MCS Index:        " << config.mcs_index << " (table " << mcs_table << ", " << mod_name << ", R=" << config.code_rate << ")\n";
     std::cout << "  Bandwidth:        " << config.n_rb << " PRBs\n";
     std::cout << "  MIMO:             " << config.n_tx_ant << "Tx x " << config.n_rx_ant << "Rx, " << config.n_layers << " layers\n";
     std::cout << "  Channel:          " << ch_name << ", DS=" << delay_spread*1e9 << "ns, fd=" << max_doppler << "Hz\n";
     std::cout << "  SINR Range:       [" << config.sinr_start << ", " << config.sinr_end << "] dB, step " << config.sinr_step << " dB\n";
     std::cout << "  Max blocks/SINR:  " << config.max_blocks_per_sinr << "\n";
     std::cout << "  Target errors:    " << config.target_block_errors << "\n";
-    std::cout << "  DMRS:             Type1, add_pos=" << dmrs_add_pos << "\n";
+    std::cout << "  DMRS:             Type1, add_pos=" << dmrs_add_pos << ", duration=" << dmrs_duration << "\n";
     std::cout << "  Channel Est:      " << (perfect_csi ? "Ideal/Perfect" : "LS + Doppler est/comp") << "\n";
+    std::cout << "  LDPC iterations:  " << config.n_ldpc_iterations << "\n";
     std::cout << "========================================\n\n";
     
     if (!out_file.empty()) {

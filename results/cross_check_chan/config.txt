@@ -1,0 +1,12 @@
+mcs_index=11
+n_rb=3
+n_layers=1
+n_sc=36
+n_sym=14
+qm=6
+tbs=1288
+G=2808
+es_n0_db=20
+noise_var=0.01
+n_pdsch_re=468
+crc_ok=PASS

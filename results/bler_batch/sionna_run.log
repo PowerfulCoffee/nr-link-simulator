@@ -1,0 +1,188 @@
+=== Sionna MCS  2 (Qm=2, R=0.188) INIT FAILED: Unsupported coderate (r<1/5). ===
+Traceback (most recent call last):
+  File "/workspace/nr-link-simulator/scripts/run_sionna_batch.py", line 125, in main
+    pusch_tx = PUSCHTransmitter(cfg, output_domain='freq')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/nr/pusch_transmitter.py", line 134, in __init__
+    self._tb_encoder = TBEncoder(
+                       ^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/nr/tb_encoder.py", line 267, in __init__
+    self._encoder = LDPC5GEncoder(
+                    ^^^^^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/fec/ldpc/encoding.py", line 134, in __init__
+    raise ValueError("Unsupported coderate (r<1/5).")
+ValueError: Unsupported coderate (r<1/5).
+=== Sionna MCS  3 (Qm=2, R=0.245, TBS=1928) SNR -4~6dB ===
+  SNR  -4.0dB: BLER=1.0000 (40/40)
+  SNR  -3.0dB: BLER=1.0000 (40/40)
+  SNR  -2.0dB: BLER=1.0000 (40/40)
+  SNR  -1.0dB: BLER=0.9250 (37/40)
+  SNR   0.0dB: BLER=0.0350 (7/200)
+  SNR   1.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  4 (Qm=2, R=0.301, TBS=2408) SNR -2~10dB ===
+  SNR  -2.0dB: BLER=1.0000 (40/40)
+  SNR  -1.0dB: BLER=1.0000 (40/40)
+  SNR   0.0dB: BLER=0.8500 (34/40)
+  SNR   1.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  5 (Qm=2, R=0.370, TBS=2976) SNR -2~10dB ===
+  SNR  -2.0dB: BLER=1.0000 (40/40)
+  SNR  -1.0dB: BLER=1.0000 (40/40)
+  SNR   0.0dB: BLER=1.0000 (40/40)
+  SNR   1.0dB: BLER=0.7667 (46/60)
+  SNR   2.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  6 (Qm=2, R=0.438, TBS=3496) SNR -2~10dB ===
+  SNR  -2.0dB: BLER=1.0000 (40/40)
+  SNR  -1.0dB: BLER=1.0000 (40/40)
+  SNR   0.0dB: BLER=1.0000 (40/40)
+  SNR   1.0dB: BLER=1.0000 (40/40)
+  SNR   2.0dB: BLER=0.5500 (33/60)
+  SNR   3.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  7 (Qm=2, R=0.514, TBS=3968) SNR 1~13dB ===
+  SNR   1.0dB: BLER=1.0000 (40/40)
+  SNR   2.0dB: BLER=1.0000 (40/40)
+  SNR   3.0dB: BLER=0.0350 (7/200)
+  SNR   4.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  8 (Qm=2, R=0.588, TBS=4608) SNR 1~13dB ===
+  SNR   1.0dB: BLER=1.0000 (40/40)
+  SNR   2.0dB: BLER=1.0000 (40/40)
+  SNR   3.0dB: BLER=1.0000 (40/40)
+  SNR   4.0dB: BLER=0.0350 (7/200)
+  SNR   5.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS  9 (Qm=2, R=0.663, TBS=5120) SNR 1~13dB ===
+  SNR   1.0dB: BLER=1.0000 (40/40)
+  SNR   2.0dB: BLER=1.0000 (40/40)
+  SNR   3.0dB: BLER=1.0000 (40/40)
+  SNR   4.0dB: BLER=0.8500 (34/40)
+  SNR   5.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 10 (Qm=4, R=0.332) INIT FAILED: Only coderate>1/3 supported for BG1. Remark: Repetition coding is currently not supported. ===
+Traceback (most recent call last):
+  File "/workspace/nr-link-simulator/scripts/run_sionna_batch.py", line 125, in main
+    pusch_tx = PUSCHTransmitter(cfg, output_domain='freq')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/nr/pusch_transmitter.py", line 134, in __init__
+    self._tb_encoder = TBEncoder(
+                       ^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/nr/tb_encoder.py", line 267, in __init__
+    self._encoder = LDPC5GEncoder(
+                    ^^^^^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/fec/ldpc/encoding.py", line 137, in __init__
+    self._bg = self._sel_basegraph(self._k, self._coderate, bg)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/sionna/src/sionna/phy/fec/ldpc/encoding.py", line 375, in _sel_basegraph
+    raise ValueError(
+ValueError: Only coderate>1/3 supported for BG1. Remark: Repetition coding is currently not supported.
+=== Sionna MCS 11 (Qm=4, R=0.369, TBS=5760) SNR 3~15dB ===
+  SNR   3.0dB: BLER=1.0000 (40/40)
+  SNR   4.0dB: BLER=1.0000 (40/40)
+  SNR   5.0dB: BLER=1.0000 (40/40)
+  SNR   6.0dB: BLER=0.0050 (1/200)
+  SNR   7.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 12 (Qm=4, R=0.424, TBS=6528) SNR 3~15dB ===
+  SNR   3.0dB: BLER=1.0000 (40/40)
+  SNR   4.0dB: BLER=1.0000 (40/40)
+  SNR   5.0dB: BLER=1.0000 (40/40)
+  SNR   6.0dB: BLER=0.9500 (38/40)
+  SNR   7.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 13 (Qm=4, R=0.479, TBS=7424) SNR 6~18dB ===
+  SNR   6.0dB: BLER=1.0000 (40/40)
+  SNR   7.0dB: BLER=0.6333 (38/60)
+  SNR   8.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 14 (Qm=4, R=0.540, TBS=8456) SNR 6~18dB ===
+  SNR   6.0dB: BLER=1.0000 (40/40)
+  SNR   7.0dB: BLER=1.0000 (40/40)
+  SNR   8.0dB: BLER=0.8500 (34/40)
+  SNR   9.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 15 (Qm=4, R=0.602, TBS=9480) SNR 8~20dB ===
+  SNR   8.0dB: BLER=1.0000 (40/40)
+  SNR   9.0dB: BLER=0.6333 (38/60)
+  SNR  10.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 16 (Qm=4, R=0.643, TBS=9992) SNR 8~20dB ===
+  SNR   8.0dB: BLER=1.0000 (40/40)
+  SNR   9.0dB: BLER=1.0000 (40/40)
+  SNR  10.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 17 (Qm=6, R=0.428, TBS=9992) SNR 8~20dB ===
+  SNR   8.0dB: BLER=1.0000 (40/40)
+  SNR   9.0dB: BLER=1.0000 (40/40)
+  SNR  10.0dB: BLER=1.0000 (40/40)
+  SNR  11.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 18 (Qm=6, R=0.455, TBS=10760) SNR 8~20dB ===
+  SNR   8.0dB: BLER=1.0000 (40/40)
+  SNR   9.0dB: BLER=1.0000 (40/40)
+  SNR  10.0dB: BLER=1.0000 (40/40)
+  SNR  11.0dB: BLER=0.4500 (36/80)
+  SNR  12.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 19 (Qm=6, R=0.505, TBS=11784) SNR 10~23dB ===
+  SNR  10.0dB: BLER=1.0000 (40/40)
+  SNR  11.0dB: BLER=1.0000 (40/40)
+  SNR  12.0dB: BLER=0.0950 (19/200)
+  SNR  13.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 20 (Qm=6, R=0.554, TBS=13064) SNR 10~23dB ===
+  SNR  10.0dB: BLER=1.0000 (40/40)
+  SNR  11.0dB: BLER=1.0000 (40/40)
+  SNR  12.0dB: BLER=1.0000 (40/40)
+  SNR  13.0dB: BLER=0.1150 (23/200)
+  SNR  14.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 21 (Qm=6, R=0.602, TBS=14088) SNR 10~23dB ===
+  SNR  10.0dB: BLER=1.0000 (40/40)
+  SNR  11.0dB: BLER=1.0000 (40/40)
+  SNR  12.0dB: BLER=1.0000 (40/40)
+  SNR  13.0dB: BLER=1.0000 (40/40)
+  SNR  14.0dB: BLER=0.0200 (4/200)
+  SNR  15.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 22 (Qm=6, R=0.650, TBS=15112) SNR 13~26dB ===
+  SNR  13.0dB: BLER=1.0000 (40/40)
+  SNR  14.0dB: BLER=1.0000 (40/40)
+  SNR  15.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 23 (Qm=6, R=0.702, TBS=16392) SNR 13~26dB ===
+  SNR  13.0dB: BLER=1.0000 (40/40)
+  SNR  14.0dB: BLER=1.0000 (40/40)
+  SNR  15.0dB: BLER=1.0000 (40/40)
+  SNR  16.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 24 (Qm=6, R=0.754, TBS=17424) SNR 13~26dB ===
+  SNR  13.0dB: BLER=1.0000 (40/40)
+  SNR  14.0dB: BLER=1.0000 (40/40)
+  SNR  15.0dB: BLER=1.0000 (40/40)
+  SNR  16.0dB: BLER=0.9000 (36/40)
+  SNR  17.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 25 (Qm=6, R=0.803, TBS=18960) SNR 16~30dB ===
+  SNR  16.0dB: BLER=1.0000 (40/40)
+  SNR  17.0dB: BLER=0.9750 (39/40)
+  SNR  18.0dB: BLER=0.0150 (3/200)
+  SNR  19.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 26 (Qm=6, R=0.853, TBS=19968) SNR 16~30dB ===
+  SNR  16.0dB: BLER=1.0000 (40/40)
+  SNR  17.0dB: BLER=1.0000 (40/40)
+  SNR  18.0dB: BLER=0.9250 (37/40)
+  SNR  19.0dB: BLER=0.0050 (1/200)
+  SNR  20.0dB: BLER=0.0000 (0/100)
+
+=== Sionna MCS 27 (Qm=6, R=0.889, TBS=21000) SNR 16~30dB ===
+  SNR  16.0dB: BLER=1.0000 (40/40)
+  SNR  17.0dB: BLER=1.0000 (40/40)
+  SNR  18.0dB: BLER=1.0000 (40/40)
+  SNR  19.0dB: BLER=0.7750 (31/40)
+  SNR  20.0dB: BLER=0.0000 (0/100)
+
+Sionna results saved to /workspace/nr-link-simulator/results/bler_batch/sionna_bler_mcs2-27.csv

@@ -102,6 +102,7 @@ struct SimulationConfig {
     bool tdd_enabled = false;
     
     int mcs_index = 15;
+    int mcs_table = 1;
     ModulationScheme mod_scheme = ModulationScheme::QPSK;
     double code_rate = 0.3;
     
