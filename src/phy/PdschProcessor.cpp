@@ -817,10 +817,13 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
 
         result.bler = static_cast<double>(result.n_errors) / result.n_blocks;
 
-        if (result.n_errors >= config_.target_block_errors && result.n_blocks >= 100) {
+        if (result.n_errors >= config_.target_block_errors && result.n_blocks >= 20) {
             break;
         }
-        if (result.n_errors == 0 && result.n_blocks >= 1000) {
+        if (result.n_errors == 0 && result.n_blocks >= 50) {
+            break;
+        }
+        if (result.n_errors == result.n_blocks && result.n_blocks >= 20) {
             break;
         }
     }
