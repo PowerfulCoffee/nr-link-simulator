@@ -836,9 +836,9 @@ std::vector<BlerResult> run_bler_simulation(const SimulationConfig& config,
     std::vector<BlerResult> results;
 
     SimulationConfig sim_config = config;
-    sim_config.n_tx_ant = std::min(sim_config.n_tx_ant, 2);
+    sim_config.n_tx_ant = std::min(sim_config.n_tx_ant, 4);
     sim_config.n_layers = std::min(sim_config.n_layers, sim_config.n_tx_ant);
-    sim_config.n_rx_ant = std::max(1, std::min(sim_config.n_rx_ant, sim_config.n_tx_ant > 1 ? 4 : 1));
+    sim_config.n_rx_ant = std::max(1, std::min(sim_config.n_rx_ant, 4));
 
     if (sim_config.n_tx_ant < 1) sim_config.n_tx_ant = 1;
     if (sim_config.n_layers < 1) sim_config.n_layers = 1;

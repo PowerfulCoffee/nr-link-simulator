@@ -233,8 +233,9 @@ def main():
         b = torch.randint(0, 2, (batch_size, k_info), dtype=torch.float32, device=device)
         b_crc = crc_enc(b)
         c = ldpc_enc(b_crc)
-        x = mapper(c)
-        x = x.reshape(batch_size, n_layers, n_symbols_per_layer)
+        x_flat = mapper(c)
+
+        x_per_re = x_flat.reshape(batch_size, n_symbols_per_layer, n_layers)
 
         n_total = batch_size * n_ofdm_sym * n_rx * n_tx
         taps_re = torch.randn(n_total, n_taps, device=device) * tap_std
@@ -269,7 +270,7 @@ def main():
                 for sc in range(n_sc):
                     for layer in range(n_layers):
                         if re_idx < n_symbols_per_layer:
-                            tx_grid[:, layer, sym, sc] = x[:, layer, re_idx]
+                            tx_grid[:, layer, sym, sc] = x_per_re[:, re_idx, layer]
                     re_idx += 1
 
         for sym in range(n_ofdm_sym):

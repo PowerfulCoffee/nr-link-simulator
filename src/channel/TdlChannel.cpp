@@ -211,63 +211,54 @@ ComplexCube TdlChannel::get_channel(int n_prbs, int n_symbols, double sample_rat
 ComplexVec TdlChannel::apply_channel(const ComplexVec& tx_signal, const ComplexCube& h) {
     int n_sc = static_cast<int>(h.n_rows);
     int n_sym = static_cast<int>(h.n_cols);
-    int n_ch = static_cast<int>(h.n_slices);
     int n_rx_ant = config_.n_rx_ant;
     int n_layers = config_.n_layers;
-    int n_tx_ant = config_.n_tx_ant;
+    int n_tx_ant = std::max(1, config_.n_tx_ant);
 
     int fft_size = get_fft_size(n_sc);
     int cp0 = get_cp_len(fft_size, true);
     int cp1 = get_cp_len(fft_size, false);
     int samples_per_ant = fft_size + cp0 + (n_sym - 1) * (fft_size + cp1);
 
-    int n_tx = std::max(1, n_tx_ant);
-    int expected_total = n_tx * samples_per_ant;
-    (void)expected_total;
-
-    int n_rx = n_rx_ant;
-    int rx_total = n_rx * samples_per_ant;
+    int rx_total = n_rx_ant * samples_per_ant;
     ComplexVec rx_signal(rx_total, arma::fill::zeros);
 
     int dc_pos = fft_size / 2;
     int half_sc = n_sc / 2;
 
-    for (int rx = 0; rx < n_rx; rx++) {
+    for (int rx = 0; rx < n_rx_ant; rx++) {
         int rx_offset = rx * samples_per_ant;
         int sym_offset = 0;
         for (int sym = 0; sym < n_sym; sym++) {
             int cp_len = (sym == 0) ? cp0 : cp1;
 
-            ComplexVec tx_freq(fft_size, arma::fill::zeros);
-            for (int sc = 0; sc < half_sc; sc++) {
-                int tx_idx = 0 * samples_per_ant + sym_offset + cp_len;
-                (void)tx_idx;
-                tx_freq(dc_pos - half_sc + sc) = 0;
-            }
-
-            ComplexVec tx_time(fft_size);
-            for (int i = 0; i < fft_size; i++) {
-                tx_time(i) = tx_signal(0 * samples_per_ant + sym_offset + cp_len + i);
-            }
-            ComplexVec freq_in = arma::fft(tx_time) / std::sqrt(static_cast<double>(fft_size));
-
             ComplexVec freq_out(fft_size, arma::fill::zeros);
             freq_out(dc_pos) = Complex(0, 0);
-            for (int sc = 0; sc < n_sc; sc++) {
-                int bin;
-                if (sc < half_sc) bin = dc_pos - half_sc + sc;
-                else bin = dc_pos + 1 + (sc - half_sc);
-                Complex h_val = h(sc, sym, rx * n_layers + 0);
-                freq_out(bin) = freq_in(bin) * h_val;
+
+            for (int tx = 0; tx < n_tx_ant && tx < n_layers; tx++) {
+                int tx_offset = tx * samples_per_ant;
+                ComplexVec tx_time(fft_size);
+                for (int i = 0; i < fft_size; i++) {
+                    tx_time(i) = tx_signal(tx_offset + sym_offset + cp_len + i);
+                }
+                ComplexVec freq_in = arma::fft(tx_time) / std::sqrt(static_cast<double>(fft_size));
+
+                for (int sc = 0; sc < n_sc; sc++) {
+                    int bin;
+                    if (sc < half_sc) bin = dc_pos - half_sc + sc;
+                    else bin = dc_pos + 1 + (sc - half_sc);
+                    Complex h_val = h(sc, sym, rx * n_layers + tx);
+                    freq_out(bin) += freq_in(bin) * h_val;
+                }
             }
 
             ComplexVec time_out = arma::ifft(freq_out) * std::sqrt(static_cast<double>(fft_size));
 
             for (int i = 0; i < cp_len; i++) {
-                rx_signal(rx_offset + sym_offset + i) = time_out(fft_size - cp_len + i);
+                rx_signal(rx_offset + sym_offset + i) += time_out(fft_size - cp_len + i);
             }
             for (int i = 0; i < fft_size; i++) {
-                rx_signal(rx_offset + sym_offset + cp_len + i) = time_out(i);
+                rx_signal(rx_offset + sym_offset + cp_len + i) += time_out(i);
             }
             sym_offset += fft_size + cp_len;
         }
