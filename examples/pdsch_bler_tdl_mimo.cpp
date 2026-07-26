@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
     if (argc > 9) n_rx_ant = atoi(argv[9]);
     if (argc > 10) n_layers = atoi(argv[10]);
     if (argc > 11) channel_type_int = atoi(argv[11]);
-    if (argc > 12) delay_spread = atof(argv[12]);
+    if (argc > 12) delay_spread = atof(argv[12]) * 1e-9;
     if (argc > 13) max_doppler = atof(argv[13]);
     if (argc > 14) dmrs_add_pos = atoi(argv[14]);
     if (argc > 15) dmrs_duration = atoi(argv[15]);

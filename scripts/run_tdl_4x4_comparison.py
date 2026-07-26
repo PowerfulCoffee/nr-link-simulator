@@ -53,7 +53,7 @@ def run_cpp(mcs, snr_start, snr_end, snr_step, perfect_csi, max_blocks=200, targ
         "4",
         "4",
         "1",
-        "100e-9",
+        "100",
         "5.0",
         "1",
         "0",
@@ -70,7 +70,7 @@ def run_cpp(mcs, snr_start, snr_end, snr_step, perfect_csi, max_blocks=200, targ
     print(f"  [C++ {'ideal' if perfect_csi else 'ls'}] Done in {dt:.1f}s -> {out_file.name}")
     return out_file
 
-def run_sionna(mcs, perfect_csi, max_blocks=100, out_file=None):
+def run_sionna(mcs, snr_start, snr_end, snr_step, perfect_csi, max_blocks=100, target_errors=30, out_file=None):
     if out_file is None:
         ce_type = "ideal" if perfect_csi else "ls"
         out_file = RESULTS_DIR / f"sionna_{ce_type}_mcs{mcs}.csv"
@@ -78,15 +78,37 @@ def run_sionna(mcs, perfect_csi, max_blocks=100, out_file=None):
         print(f"  [Sionna {ce_type}] Already exists: {out_file.name}")
         return out_file
 
-    args = [sys.executable, str(SIONNA_SCRIPT), str(mcs), "1" if perfect_csi else "0", str(out_file)]
-    print(f"  [Sionna {'ideal' if perfect_csi else 'ls'}] Running MCS{mcs}...")
+    ce_arg = "ideal" if perfect_csi else "ls"
+    args = [
+        sys.executable, str(SIONNA_SCRIPT),
+        "--mcs", str(mcs),
+        "--snr-start", str(snr_start),
+        "--snr-end", str(snr_end),
+        "--snr-step", str(snr_step),
+        "--max-blocks", str(max_blocks),
+        "--target-errors", str(target_errors),
+        "--n-prb", "30",
+        "--n-rx", "4",
+        "--n-layers", "4",
+        "--channel", "tdl",
+        "--delay-spread", "100",
+        "--max-doppler", "5.0",
+        "--dmrs-add-pos", "1",
+        "--dmrs-duration", "0",
+        "--ce-type", ce_arg,
+        "--ldpc-iters", "20",
+        "--batch-size", "5",
+        "--mcs-table", "2",
+        "--output", str(out_file),
+    ]
+    print(f"  [Sionna {ce_arg}] Running MCS{mcs}...")
     t0 = time.time()
     result = subprocess.run(args, cwd=str(ROOT), capture_output=True, text=True, timeout=7200)
     dt = time.time() - t0
     if result.returncode != 0:
         print(f"  [Sionna ERROR] {result.stderr[-1000:]}")
         return None
-    print(f"  [Sionna {'ideal' if perfect_csi else 'ls'}] Done in {dt:.1f}s -> {out_file.name}")
+    print(f"  [Sionna {ce_arg}] Done in {dt:.1f}s -> {out_file.name}")
     return out_file
 
 def read_csv(filepath):
@@ -109,14 +131,14 @@ def plot_all_results():
     if not isinstance(axes, np.ndarray):
         axes = [axes]
 
-    markers = {'cpp_ideal': 'o-', 'cpp_ls': 's-', 'sionna_ideal': '^--', 'sionna_ls': 'v--'}
-    colors = {'cpp_ideal': '#1f77b4', 'cpp_ls': '#ff7f0e', 'sionna_ideal': '#2ca02c', 'sionna_ls': '#d62728'}
-    labels = {'cpp_ideal': 'C++ Ideal CE', 'cpp_ls': 'C++ LS CE', 'sionna_ideal': 'Sionna Ideal CE', 'sionna_ls': 'Sionna LS CE'}
+    markers = {'cpp_ideal': 'o-', 'sionna_ideal': '^--'}
+    colors = {'cpp_ideal': '#1f77b4', 'sionna_ideal': '#2ca02c'}
+    labels = {'cpp_ideal': 'C++ Ideal CE', 'sionna_ideal': 'Sionna Ideal CE'}
 
     for ax, cfg in zip(axes, MCS_CONFIGS):
         mcs = cfg['mcs']
         mod = cfg['mod']
-        for key in ['cpp_ideal', 'cpp_ls', 'sionna_ideal', 'sionna_ls']:
+        for key in ['cpp_ideal', 'sionna_ideal']:
             ce_type = key.split('_')[1]
             is_perfect = ce_type == 'ideal'
             prefix = key.split('_')[0]
@@ -155,9 +177,7 @@ def main():
     all_tasks = []
     for cfg in MCS_CONFIGS:
         all_tasks.append(('cpp', cfg, True))
-        all_tasks.append(('cpp', cfg, False))
         all_tasks.append(('sionna', cfg, True))
-        all_tasks.append(('sionna', cfg, False))
 
     results = {}
     for i, (engine, cfg, perfect) in enumerate(all_tasks):
@@ -168,9 +188,10 @@ def main():
 
         if engine == 'cpp':
             f = run_cpp(mcs, cfg['snr_start'], cfg['snr_end'], cfg['snr_step'], perfect,
-                       max_blocks=200, target_errors=50)
+                       max_blocks=100, target_errors=30)
         else:
-            f = run_sionna(mcs, perfect, max_blocks=100)
+            f = run_sionna(mcs, cfg['snr_start'], cfg['snr_end'], cfg['snr_step'], perfect,
+                          max_blocks=100, target_errors=30)
         results[(engine, ce_type, mcs)] = f
 
     print("\n" + "=" * 60)
@@ -183,7 +204,7 @@ def main():
         mcs = cfg['mcs']
         mod = cfg['mod']
         print(f"\n--- {mod} (MCS{mcs}) ---")
-        for key in ['cpp_ideal', 'cpp_ls', 'sionna_ideal', 'sionna_ls']:
+        for key in ['cpp_ideal', 'sionna_ideal']:
             prefix, ce_type = key.split('_')
             filepath = RESULTS_DIR / f"{prefix}_{ce_type}_mcs{mcs}.csv"
             snrs, blers, _ = read_csv(filepath)

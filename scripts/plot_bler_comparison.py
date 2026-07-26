@@ -1,128 +1,111 @@
-#!/usr/bin/env python3
-"""
-Plot SNR vs BLER comparison for 4 MCS levels in a 2x2 grid
-Methods: Ideal CE (Perfect), C++ LS-Doppler, Sionna LS (no Doppler)
-"""
 import csv
-import os
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-from pathlib import Path
+import os
 
-plt.rcParams.update({
-    'font.size': 11,
-    'axes.labelsize': 12,
-    'axes.titlesize': 13,
-    'legend.fontsize': 9,
-    'xtick.labelsize': 10,
-    'ytick.labelsize': 10,
-})
+results_dir = '/workspace/nr-link-simulator/results/tdl_crosscheck_4x4'
 
-RESULTS_DIR = Path("/workspace/nr-link-simulator/scripts/results/tdl_doppler")
-
-MCS_INFO = {
-    3:  {"name": "QPSK (MCS 3)",  "mod": "QPSK",  "R": 0.27},
-    10: {"name": "16QAM (MCS 10)", "mod": "16QAM", "R": 0.50},
-    17: {"name": "64QAM (MCS 17)", "mod": "64QAM", "R": 0.62},
-    27: {"name": "64QAM high-rate (MCS 27)", "mod": "64QAM (high R)", "R": 0.89},
-}
-
-METHODS = [
-    ("cpp_perfect",        "C++ Ideal CE",        "-",  "o", "#1f77b4", 1.5, 6),
-    ("cpp_ls_doppler",     "C++ LS + Doppler",    "--", "s", "#2ca02c", 1.5, 6),
-    ("sionna_perfect",     "Sionna Ideal CE",     ":",  "^", "#1f77b4", 2.0, 6),
-    ("sionna_ls_nodoppler","Sionna LS (no Doppler)", "-.", "v", "#d62728", 1.5, 6),
+MCS_CONFIGS = [
+    {"mcs": 4,  "mod": "QPSK",   "color": "blue",    "marker_cpp": "o", "marker_sionna": "s"},
+    {"mcs": 10, "mod": "16QAM",  "color": "red",     "marker_cpp": "o", "marker_sionna": "s"},
+    {"mcs": 16, "mod": "64QAM",  "color": "green",   "marker_cpp": "o", "marker_sionna": "s"},
+    {"mcs": 24, "mod": "256QAM", "color": "purple",  "marker_cpp": "o", "marker_sionna": "s"},
 ]
 
-def load_csv(filepath):
-    snr, bler = [], []
-    if not filepath.exists():
-        return None, None
-    with open(filepath) as f:
+def read_csv(filepath):
+    snr_list = []
+    bler_list = []
+    if not os.path.exists(filepath):
+        return snr_list, bler_list
+    with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            try:
-                s = float(row['SINR_dB'])
-                b = float(row['BLER'])
-                n = int(row['Blocks'])
-                if n >= 30 and b <= 1.0:
-                    snr.append(s)
-                    bler.append(b)
-            except:
-                pass
-    return np.array(snr), np.array(bler)
+            snr_list.append(float(row['SINR_dB']))
+            bler_list.append(float(row['BLER']))
+    return snr_list, bler_list
 
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-axes = axes.flatten()
+plt.figure(figsize=(10, 7))
 
-mcs_list = [3, 10, 17, 27]
-
-plot_data = {}
-for mcs in mcs_list:
-    plot_data[mcs] = {}
-    for method_key, _, _, _, _, _, _ in METHODS:
-        f = RESULTS_DIR / f"{method_key}_mcs{mcs}.csv"
-        snr, bler = load_csv(f)
-        if snr is not None and len(snr) > 0:
-            plot_data[mcs][method_key] = (snr, bler)
-
-for idx, mcs in enumerate(mcs_list):
-    ax = axes[idx]
-    info = MCS_INFO[mcs]
+for cfg in MCS_CONFIGS:
+    mcs = cfg['mcs']
+    mod = cfg['mod']
+    color = cfg['color']
     
-    for method_key, label, ls, marker, color, lw, ms in METHODS:
-        if method_key in plot_data[mcs]:
-            snr, bler = plot_data[mcs][method_key]
-            if len(snr) > 0:
-                ax.semilogy(snr, bler, label=label, linestyle=ls, marker=marker,
-                           color=color, linewidth=lw, markersize=ms, markevery=max(1, len(snr)//10))
+    cpp_file = os.path.join(results_dir, f'cpp_ideal_mcs{mcs}.csv')
+    sionna_file = os.path.join(results_dir, f'sionna_ideal_mcs{mcs}.csv')
     
-    ax.set_xlabel('SNR (dB)')
-    ax.set_ylabel('BLER')
-    ax.set_title(f"{info['name']}, R≈{info['R']}", fontweight='bold')
-    ax.grid(True, which='both', alpha=0.3, linestyle='-')
-    ax.set_ylim([0.008, 1.0])
-    ax.axhline(y=0.1, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-    ax.text(ax.get_xlim()[0]+0.5 if ax.get_xlim()[0] < ax.get_xlim()[1] else 0, 0.12, 'BLER=0.1', 
-            fontsize=8, color='gray', alpha=0.7)
-    ax.legend(loc='lower left', framealpha=0.9)
+    cpp_snr, cpp_bler = read_csv(cpp_file)
+    sionna_snr, sionna_bler = read_csv(sionna_file)
+    
+    if cpp_snr:
+        plt.semilogy(cpp_snr, cpp_bler, color=color, marker=cfg['marker_cpp'], 
+                     linestyle='-', linewidth=2, markersize=8, label=f'C++ Ideal CE {mod}')
+    
+    if sionna_snr:
+        plt.semilogy(sionna_snr, sionna_bler, color=color, marker=cfg['marker_sionna'],
+                     linestyle='--', linewidth=2, markersize=8, markerfacecolor='none',
+                     label=f'Sionna Ideal CE {mod}')
 
-fig.suptitle(
-    'TDL-A Channel Performance Comparison\n'
-    'DS=100ns, $f_d$=70Hz, 3PRB SISO, DMRS Type1 add-pos=1 (dual DMRS)\n'
-    'Ideal CE vs C++ LS with Doppler estimation/compensation vs Sionna LS (linear interp only)',
-    fontsize=13, fontweight='bold', y=1.02
-)
-
+plt.xlabel('SNR (dB)', fontsize=12)
+plt.ylabel('BLER', fontsize=12)
+plt.title('BLER vs SNR: 30 PRB, 4x4 Rank 4, TDL-A (DS=100ns), DMRS Type1 Add-Pos=1\nIdeal Channel Estimation', fontsize=12)
+plt.grid(True, which='both', linestyle='--', alpha=0.7)
+plt.legend(fontsize=10, bbox_to_anchor=(1.02, 1), loc='upper left')
+plt.xlim(-6, 32)
+plt.ylim(1e-3, 1.5)
 plt.tight_layout()
-out_path = "/workspace/nr-link-simulator/scripts/results/tdl_doppler/bler_comparison_grid.png"
-plt.savefig(out_path, dpi=150, bbox_inches='tight')
-print(f"Plot saved to {out_path}")
 
-print("\n" + "="*70)
-print("PERFORMANCE SUMMARY (SNR required for BLER = 0.1)")
-print("="*70)
-for mcs in mcs_list:
-    info = MCS_INFO[mcs]
-    print(f"\n{info['name']} (R≈{info['R']}):")
-    for method_key, label, _, _, _, _, _ in METHODS:
-        if method_key in plot_data[mcs]:
-            snr, bler = plot_data[mcs][method_key]
-            if len(snr) > 1:
-                bler = np.array(bler)
-                snr = np.array(snr)
-                sort_idx = np.argsort(snr)
-                snr_s = snr[sort_idx]
-                bler_s = bler[sort_idx]
-                if bler_s[0] > 0.1 and bler_s[-1] < 0.1:
-                    snr_at_01 = np.interp(0.1, bler_s[::-1], snr_s[::-1])
-                    print(f"  {label:30s}: {snr_at_01:5.1f} dB")
-                elif bler_s[-1] >= 0.1:
-                    above_idx = np.where(bler_s < 0.15)[0]
-                    if len(above_idx) > 0:
-                        snr_est = snr_s[above_idx[0]]
-                        print(f"  {label:30s}: ~{snr_est:4.1f} dB (BLER≈{bler_s[above_idx[0]]:.2f} at highest SNR)")
-                    else:
-                        print(f"  {label:30s}: >{snr_s[-1]:.1f} dB (BLER={bler_s[-1]:.3f})")
+output_file = os.path.join(results_dir, 'bler_comparison_ideal_ce.png')
+plt.savefig(output_file, dpi=150, bbox_inches='tight')
+print(f"Plot saved to {output_file}")
+
+plt.figure(figsize=(12, 10))
+
+plt_idx = 1
+for cfg in MCS_CONFIGS:
+    mcs = cfg['mcs']
+    mod = cfg['mod']
+    
+    plt.subplot(2, 2, plt_idx)
+    
+    cpp_file = os.path.join(results_dir, f'cpp_ideal_mcs{mcs}.csv')
+    sionna_file = os.path.join(results_dir, f'sionna_ideal_mcs{mcs}.csv')
+    
+    cpp_snr, cpp_bler = read_csv(cpp_file)
+    sionna_snr, sionna_bler = read_csv(sionna_file)
+    
+    if cpp_snr:
+        plt.semilogy(cpp_snr, cpp_bler, 'b-o', linewidth=2, markersize=7, label='C++ Ideal CE')
+    if sionna_snr:
+        plt.semilogy(sionna_snr, sionna_bler, 'r--s', linewidth=2, markersize=7, 
+                     markerfacecolor='none', label='Sionna Ideal CE')
+    
+    plt.xlabel('SNR (dB)', fontsize=10)
+    plt.ylabel('BLER', fontsize=10)
+    plt.title(f'{mod} (MCS{mcs}, Table 2)', fontsize=11)
+    plt.grid(True, which='both', linestyle='--', alpha=0.7)
+    plt.legend(fontsize=9)
+    plt.ylim(1e-3, 1.5)
+    
+    plt_idx += 1
+
+plt.suptitle('C++ vs Sionna BLER Comparison: 4x4 MIMO TDL-A (DS=100ns)\n30 PRB, Rank 4, DMRS Type1 (sym 2&7), Ideal CE', fontsize=13)
+plt.tight_layout()
+
+subplot_file = os.path.join(results_dir, 'bler_comparison_subplots.png')
+plt.savefig(subplot_file, dpi=150, bbox_inches='tight')
+print(f"Subplot figure saved to {subplot_file}")
+
+print("\n=== Summary of Results ===")
+for cfg in MCS_CONFIGS:
+    mcs = cfg['mcs']
+    mod = cfg['mod']
+    cpp_file = os.path.join(results_dir, f'cpp_ideal_mcs{mcs}.csv')
+    sionna_file = os.path.join(results_dir, f'sionna_ideal_mcs{mcs}.csv')
+    cpp_snr, cpp_bler = read_csv(cpp_file)
+    sionna_snr, sionna_bler = read_csv(sionna_file)
+    print(f"\n{mod} (MCS{mcs}):")
+    if cpp_snr:
+        print(f"  C++:    SNR range [{cpp_snr[0]}, {cpp_snr[-1]}] dB, points={len(cpp_snr)}")
+    if sionna_snr:
+        print(f"  Sionna: SNR range [{sionna_snr[0]}, {sionna_snr[-1]}] dB, points={len(sionna_snr)}")
