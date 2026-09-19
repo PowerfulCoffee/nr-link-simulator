@@ -76,82 +76,31 @@ public:
         int n_sym = grid.n_symbols;
         int n_ant = grid.n_ant;
         int n_layers = std::min(config.n_layers, (config.dmrs_type == DmrsType::TYPE1) ? 4 : 6);
-        
-        int n_re_per_prb = (config.dmrs_type == DmrsType::TYPE1) ? TYPE1_N_RE : TYPE2_N_RE;
-        int n_cdm_groups = (config.dmrs_type == DmrsType::TYPE1) ? TYPE1_N_CDM_GROUPS : TYPE2_N_CDM_GROUPS;
-        const int* re_pos = (config.dmrs_type == DmrsType::TYPE1) ? TYPE1_RE_POS : TYPE2_RE_POS;
-        
+
         int n_dmrs_sym = get_num_dmrs_symbols(config.dmrs_additional_pos);
-        
+
         uint16_t N_id = 0;
         int n_symb_slot = 14;
-        
+
         for (int dmrs_idx = 0; dmrs_idx < n_dmrs_sym; dmrs_idx++) {
             int l = get_dmrs_symbol_position(config.dmrs_additional_pos, config.dmrs_duration, dmrs_idx);
             if (l < 0 || l >= n_sym) continue;
             if (symbol_start >= 0 && l < symbol_start) continue;
-            
+
             int sym = l;
-            
-            int seq_len = n_rb * n_re_per_prb;
+
+            int seq_len = n_sc;
             uint32_t cinit = compute_cinit(n_symb_slot, slot_idx, sym, N_id);
             std::vector<uint8_t> c_seq;
             generate_pn_sequence(cinit, 2 * seq_len, c_seq);
-            
-            for (int prb = 0; prb < n_rb; prb++) {
-                for (int re_idx = 0; re_idx < n_re_per_prb; re_idx++) {
-                    int sc = prb * 12 + re_pos[re_idx];
-                    if (sc >= n_sc) continue;
-                    
-                    int m = prb * n_re_per_prb + re_idx;
+
+            for (int layer = 0; layer < n_layers; layer++) {
+                for (int sc = layer; sc < n_sc; sc += n_layers) {
+                    int m = sc;
                     if (m >= seq_len) continue;
-                    
-                    Complex base_sym = get_dmrs_symbol(c_seq, m);
-                    
-                    int cdm_group;
-                    if (config.dmrs_type == DmrsType::TYPE1) {
-                        cdm_group = re_idx / (n_re_per_prb / n_cdm_groups);
-                        cdm_group = std::min(cdm_group, n_cdm_groups - 1);
-                    } else {
-                        if (re_idx < 2) cdm_group = 0;
-                        else cdm_group = 1;
-                    }
-                    
-                    for (int layer = 0; layer < n_layers; layer++) {
-                        double w_f = 1.0;
-                        
-                        if (config.dmrs_type == DmrsType::TYPE1) {
-                            int port_offset = layer;
-                            if (port_offset < 2) {
-                                w_f = (port_offset % 2 == 0) ? 1.0 : -1.0;
-                                cdm_group = 0;
-                            } else {
-                                w_f = (port_offset % 2 == 0) ? 1.0 : -1.0;
-                                cdm_group = 1;
-                            }
-                        } else {
-                            int cdm_g = layer / 2;
-                            int port_in_g = layer % 2;
-                            cdm_group = std::min(cdm_g, n_cdm_groups - 1);
-                            w_f = (port_in_g == 0) ? 1.0 : -1.0;
-                        }
-                        
-                        Complex dmrs_val = base_sym * Complex(w_f, 0.0);
-                        
-                        double beta = 1.0;
-                        if (config.dmrs_type == DmrsType::TYPE1) {
-                            beta = std::sqrt(2.0);
-                        }
-                        
-                        if (config.n_layers <= n_ant) {
-                            grid.set_re(layer % n_ant, sym, sc, dmrs_val * beta);
-                        } else {
-                            double scale = 1.0 / std::sqrt((double)n_layers);
-                            for (int ant = 0; ant < n_ant; ant++) {
-                                grid.set_re(ant, sym, sc, dmrs_val * scale * beta);
-                            }
-                        }
-                    }
+                    Complex dmrs_val = get_dmrs_symbol(c_seq, m);
+                    int ant = layer % n_ant;
+                    grid.set_re(ant, sym, sc, dmrs_val);
                 }
             }
         }

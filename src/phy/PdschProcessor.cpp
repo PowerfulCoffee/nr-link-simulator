@@ -590,9 +590,7 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
     ch_config.n_layers = n_layers;
     ComplexCube channel_est = channel_estimator_->estimate(rx_grid, dmrs_grid, ch_config);
 
-    double noise_var_ideal = std::pow(10.0, -sinr_db / 10.0);
-    double noise_var_est = channel_estimator_->get_estimated_noise_var();
-    double noise_var = (noise_var_est > 1e-12) ? noise_var_est : noise_var_ideal;
+    double noise_var = channel_estimator_->get_estimated_noise_var();
 
     ComplexMat rx_pdsch = extract_pdsch_from_grid(rx_grid, 0, n_pdsch_rbs_, dmrs_pattern_, config_, slot_idx);
 

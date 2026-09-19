@@ -1,0 +1,33 @@
+========================================
+  NR PDSCH BLER TDL MIMO Simulation (C++ Cross-Check)
+========================================
+Configuration:
+  MCS Index:        16 (table 2, 64QAM, R=0.702148)
+  Bandwidth:        30 PRBs
+  MIMO:             4Tx x 4Rx, 4 layers
+  Channel:          TDL-A, DS=100ns, fd=5Hz
+  SINR Range:       [10, 30] dB, step 2 dB
+  Max blocks/SINR:  50
+  Target errors:    20
+  DMRS:             Type1, add_pos=1, duration=0
+  Channel Est:      Ideal/Perfect
+  LDPC iterations:  20
+========================================
+
+
+========================================
+  Results Summary
+========================================
+  SINR(dB)      Blocks      Errors        BLER
+----------------------------------------
+     10.00          20          20    1.000000
+     12.00          20          20    1.000000
+     14.00          25          20    0.800000
+     16.00          25          20    0.800000
+     18.00          39          20    0.512821
+     20.00          50           5    0.100000
+     22.00          50           3    0.060000
+     24.00          50           0    0.000000
+     26.00          50           0    0.000000
+     28.00          50           0    0.000000
+     30.00          50           0    0.000000

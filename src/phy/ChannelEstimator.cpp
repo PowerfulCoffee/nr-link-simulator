@@ -137,8 +137,8 @@ public:
         double noise_power_sum = 0.0;
         int noise_sample_count = 0;
         constexpr double MIN_NOISE_VAR = 1e-10;
-        constexpr double SCALE_INTERNAL = 4.0 / 3.0;
-        constexpr double SCALE_EDGE = 1.0;
+        constexpr double SCALE_INTERNAL = 2.0 / 3.0;
+        constexpr double SCALE_EDGE = 0.5;
 
         int ref_tx_ant = std::min(n_tx_ant, n_layers);
         for (int dmrs_sym : dmrs_symbols) {
@@ -193,18 +193,6 @@ public:
                             noise_sample_count++;
                         }
                     }
-
-                    int cdm_group_size = 2;
-                    for (size_t i = 0; i + 1 < dmrs_sc.size(); i += cdm_group_size) {
-                        size_t j = i + 1;
-                        if (j >= dmrs_sc.size()) break;
-                        int sc_a = dmrs_sc[i];
-                        int sc_b = dmrs_sc[j];
-                        if (sc_b - sc_a > 2) continue;
-                        Complex avg = (h_est(sc_a, dmrs_sym, ch_idx) + h_est(sc_b, dmrs_sym, ch_idx)) / 2.0;
-                        h_est(sc_a, dmrs_sym, ch_idx) = avg;
-                        h_est(sc_b, dmrs_sym, ch_idx) = avg;
-                    }
                     
                     interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_idx, n_sc);
                 }
@@ -256,14 +244,9 @@ public:
                 int first_dmrs_sym = dmrs_symbols.front();
                 int last_dmrs_sym = dmrs_symbols.back();
                 
-                double t_first = get_ofdm_symbol_time(scs, fft_size, first_dmrs_sym);
                 for (int sym = 0; sym < first_dmrs_sym; sym++) {
-                    double t_sym = get_ofdm_symbol_time(scs, fft_size, sym);
-                    double delta_t = t_sym - t_first;
-                    double phase = -2.0 * M_PI * estimated_doppler_ * delta_t;
-                    Complex phase_comp(std::cos(phase), std::sin(phase));
                     for (int sc = 0; sc < n_sc; sc++) {
-                        h_est(sc, sym, ch_idx) = h_est(sc, first_dmrs_sym, ch_idx) * phase_comp;
+                        h_est(sc, sym, ch_idx) = h_est(sc, first_dmrs_sym, ch_idx);
                     }
                 }
                 
@@ -273,33 +256,18 @@ public:
                     int dist = sym_b - sym_a;
                     if (dist <= 0) continue;
                     
-                    double t_a = get_ofdm_symbol_time(scs, fft_size, sym_a);
-                    double t_b = get_ofdm_symbol_time(scs, fft_size, sym_b);
-                    double delta_t_ab = t_b - t_a;
-                    
                     for (int sym = sym_a + 1; sym < sym_b; sym++) {
-                        double t_sym = get_ofdm_symbol_time(scs, fft_size, sym);
-                        double alpha = (t_sym - t_a) / delta_t_ab;
-                        double phase_a = -2.0 * M_PI * estimated_doppler_ * (t_sym - t_a);
-                        double phase_b = -2.0 * M_PI * estimated_doppler_ * (t_sym - t_b);
-                        Complex comp_a(std::cos(phase_a), std::sin(phase_a));
-                        Complex comp_b(std::cos(phase_b), std::sin(phase_b));
+                        double alpha = static_cast<double>(sym - sym_a) / dist;
                         for (int sc = 0; sc < n_sc; sc++) {
-                            Complex h_a = h_est(sc, sym_a, ch_idx) * comp_a;
-                            Complex h_b = h_est(sc, sym_b, ch_idx) * comp_b;
-                            h_est(sc, sym, ch_idx) = h_a * (1.0 - alpha) + h_b * alpha;
+                            h_est(sc, sym, ch_idx) = h_est(sc, sym_a, ch_idx) * (1.0 - alpha) 
+                                                   + h_est(sc, sym_b, ch_idx) * alpha;
                         }
                     }
                 }
                 
-                double t_last = get_ofdm_symbol_time(scs, fft_size, last_dmrs_sym);
                 for (int sym = last_dmrs_sym + 1; sym < n_sym; sym++) {
-                    double t_sym = get_ofdm_symbol_time(scs, fft_size, sym);
-                    double delta_t = t_sym - t_last;
-                    double phase = -2.0 * M_PI * estimated_doppler_ * delta_t;
-                    Complex phase_comp(std::cos(phase), std::sin(phase));
                     for (int sc = 0; sc < n_sc; sc++) {
-                        h_est(sc, sym, ch_idx) = h_est(sc, last_dmrs_sym, ch_idx) * phase_comp;
+                        h_est(sc, sym, ch_idx) = h_est(sc, last_dmrs_sym, ch_idx);
                     }
                 }
             }
