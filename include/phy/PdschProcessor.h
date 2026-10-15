@@ -90,6 +90,7 @@ private:
     void init_default_modules();
     int calculate_pdsch_capacity();
     ComplexMat get_identity_precoding_matrix();
+    ComplexMat get_precoder_matrix();
     bool decode_transport_block(const SoftVec& descrambled_llr, const PdschTxResult& tx_info,
                                 BitVec& decoded_info_bits);
 };

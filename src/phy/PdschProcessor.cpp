@@ -252,6 +252,16 @@ ComplexMat PdschProcessor::get_identity_precoding_matrix() {
     return w;
 }
 
+ComplexMat PdschProcessor::get_precoder_matrix() {
+    if (config_.precoder_mode == PrecoderMode::TYPE1_CSI) {
+        // TS 38.214 5.2.1.2 Type I single-panel codebook
+        return build_type1_csi_precoder(config_.n_tx_ant, config_.n_layers,
+                                        config_.csi_n1, config_.csi_n2, config_.csi_i1_phi,
+                                        config_.csi_i11, config_.csi_i12, config_.csi_i2);
+    }
+    return get_identity_precoding_matrix();
+}
+
 TransportBlock PdschProcessor::generate_transport_block() {
     int n_re_per_prb = count_pdsch_re_per_prb(dmrs_pattern_, config_, 0);
     int qm = mcs_to_bits_per_symbol(config_.mcs_index, config_.mcs_table);
@@ -357,7 +367,7 @@ PdschTxResult PdschProcessor::transmit(const TransportBlock& tb, int slot_idx) {
             this_E = std::max(this_E, qm);
         }
 
-        BitVec rm_bits_cb = rate_matcher_->rate_match(coded_bits_comp, this_E, tb.rv, cbs.bgn, cbs.zc, qm, 0);
+        BitVec rm_bits_cb = rate_matcher_->rate_match(coded_bits_comp, this_E, tb.rv, cbs.bgn, cbs.zc, qm, n_filler);
 
         CodeBlockInfo cbi;
         cbi.offset = cb_offset;
@@ -375,14 +385,18 @@ PdschTxResult PdschProcessor::transmit(const TransportBlock& tb, int slot_idx) {
         result.n_coded_bits = G;
     }
 
-    result.scrambling_seed = static_cast<uint32_t>(slot_idx + 1);
+    // TS 38.211 7.3.1.1: c_init = n_RNTI * 2^15 + q * 2^14 + n_ID
+    // (q = 0 for single-codeword transmission)
+    result.scrambling_seed = static_cast<uint32_t>(
+        static_cast<uint64_t>(config_.n_rnti) * 32768ULL
+        + static_cast<uint64_t>(config_.n_id_pdsch));
     BitVec scrambled = scrambler_->scramble(rm_bits_concat, result.scrambling_seed);
 
     ComplexVec modulated = modulator_->modulate(scrambled, config_.mod_scheme);
 
     ComplexMat layered = layer_mapper_->map(modulated, n_layers);
 
-    ComplexMat w = get_identity_precoding_matrix();
+    ComplexMat w = get_precoder_matrix();
     ComplexMat precoded = precoder_->precode(layered, w);
 
     int n_sym = get_symbols_per_slot();
@@ -439,7 +453,7 @@ bool PdschProcessor::decode_transport_block(const SoftVec& descrambled_llr, cons
         int filler_start_comp = cb_k_info - n_punctured;
         int n_cb_comp = N_cb - n_filler;
 
-        SoftVec recovered_comp = rate_matcher_->rate_recover(cb_llr, n_cb_comp, 0, bgn, zc, qm, 0);
+        SoftVec recovered_comp = rate_matcher_->rate_recover(cb_llr, n_cb_comp, 0, bgn, zc, qm, n_filler);
 
         SoftVec full_llr(N, 0.0);
         if (n_filler > 0 && filler_start_comp >= 0 && filler_start_comp <= n_cb_comp) {
@@ -590,6 +604,34 @@ PdschRxResult PdschProcessor::receive(const ResourceGrid& rx_grid_in, const Pdsc
     ch_config.n_layers = n_layers;
     ComplexCube channel_est = channel_estimator_->estimate(rx_grid, dmrs_grid, ch_config);
 
+    // The LS estimator produces per-PORT channels (n_ch = n_rx * n_tx).
+    // The equalizer expects per-LAYER effective channels, so fold the
+    // precoding matrix into the channel: H_eff(rx, l) = sum_p H(rx, p) * W(p, l).
+    // The perfect-CSI estimator still produces layer-domain channels
+    // (n_ch = n_rx * n_layers), used as-is (identity precoding).
+    int n_tx = config_.n_tx_ant;
+    if (static_cast<int>(channel_est.n_slices) == n_rx_ant * n_tx
+        && (n_tx != n_layers || config_.precoder_mode == PrecoderMode::TYPE1_CSI)) {
+        ComplexMat w = get_precoder_matrix();
+        ComplexCube h_layers(n_sc, n_sym, n_rx_ant * n_layers, arma::fill::zeros);
+        for (int rx = 0; rx < n_rx_ant; rx++) {
+            for (int l = 0; l < n_layers; l++) {
+                int ch_dst = rx * n_layers + l;
+                for (int p = 0; p < n_tx; p++) {
+                    Complex wp = w(p, l);
+                    if (std::abs(wp) < 1e-12) continue;
+                    int ch_src = rx * n_tx + p;
+                    for (int sym = 0; sym < n_sym; sym++) {
+                        for (int sc = 0; sc < n_sc; sc++) {
+                            h_layers(sc, sym, ch_dst) += channel_est(sc, sym, ch_src) * wp;
+                        }
+                    }
+                }
+            }
+        }
+        channel_est = h_layers;
+    }
+
     double noise_var = channel_estimator_->get_estimated_noise_var();
 
     ComplexMat rx_pdsch = extract_pdsch_from_grid(rx_grid, 0, n_pdsch_rbs_, dmrs_pattern_, config_, slot_idx);
@@ -645,12 +687,7 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
     int n_sc = n_pdsch_rbs_ * 12;
     int n_sym = get_symbols_per_slot();
 
-    bool fast_awgn = false;
-    bool fast_fading = false;
-
     double sinr_lin = std::pow(10.0, sinr_db / 10.0);
-    double noise_var = 1.0 / sinr_lin;
-    double sigma_dim = std::sqrt(noise_var / 2.0);
     std::mt19937 local_rng(seed_);
 
     for (int block = 0; block < config_.max_blocks_per_sinr; block++) {
@@ -660,153 +697,25 @@ bool PdschProcessor::process_single_snr_point(double sinr_db, BlerResult& result
 
         PdschRxResult rx_res;
 
-        if (fast_awgn) {
-            ResourceGrid rx_grid = tx_res.tx_grid;
-            std::normal_distribution<double> nd(0.0, sigma_dim);
-            for (int ant = 0; ant < rx_grid.n_ant; ant++) {
-                for (int sym = 0; sym < rx_grid.n_symbols; sym++) {
-                    for (int sc = 0; sc < rx_grid.n_subcarriers; sc++) {
-                        Complex val = rx_grid.get_re(ant, sym, sc);
-                        double nr = nd(local_rng);
-                        double ni = nd(local_rng);
-                        rx_grid.set_re(ant, sym, sc, val + Complex(nr, ni));
-                    }
-                }
-            }
+        int fft_size = get_fft_size(n_pdsch_rbs_, config_.scs);
+        double sample_rate = config_.scs * static_cast<double>(fft_size);
 
-            rx_res.crc_ok = false;
+        ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
+        ComplexVec rx_signal = channel_model_->apply_channel(tx_res.tx_signal, h);
 
-            ComplexMat rx_pdsch = extract_pdsch_from_grid(rx_grid, 0, n_pdsch_rbs_, dmrs_pattern_, config_, slot_idx);
+        double noise_var_slow = 1.0 / sinr_lin;
+        rx_signal = channel_model_->add_noise(rx_signal, noise_var_slow);
 
-            ComplexVec rx_symbols(rx_pdsch.n_rows);
-            for (int i = 0; i < (int)rx_pdsch.n_rows; i++) {
-                rx_symbols(i) = rx_pdsch(i, 0);
-            }
+        int n_rx_ant = ch_config.n_rx_ant;
+        ResourceGrid demod_grid = ofdm_modulator_->demodulate(rx_signal, n_rx_ant,
+                                                              config_.scs, n_sym);
+        ResourceGrid rx_grid = fix_ofdm_demod_grid(demod_grid, n_rx_ant, n_sym, n_sc);
 
-            SoftVec llr = modulator_->demodulate(rx_symbols, config_.mod_scheme, noise_var);
-            for (int i = 0; i < (int)llr.size(); i++) {
-                if (llr[i] > LLR_CLIP) llr[i] = LLR_CLIP;
-                else if (llr[i] < -LLR_CLIP) llr[i] = -LLR_CLIP;
-            }
-            SoftVec descrambled = scrambler_->descramble(llr, tx_res.scrambling_seed);
-
-            BitVec decoded_info;
-            rx_res.crc_ok = decode_transport_block(descrambled, tx_res, decoded_info);
-            rx_res.decoded_bits = decoded_info;
-            rx_res.sinr_est = sinr_db;
-            rx_res.noise_var_est = noise_var;
-        } else if (fast_fading) {
-            int fft_size = get_fft_size(n_pdsch_rbs_, config_.scs);
-            double sample_rate = config_.scs * static_cast<double>(fft_size);
-            ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
-
-            std::normal_distribution<double> nd(0.0, sigma_dim);
-
-            int qam_m;
-            switch (config_.mod_scheme) {
-                case ModulationScheme::QPSK:   qam_m = 1; break;
-                case ModulationScheme::QAM16:  qam_m = 2; break;
-                case ModulationScheme::QAM256: qam_m = 4; break;
-                case ModulationScheme::QAM64:
-                default:                       qam_m = 3; break;
-            }
-            int M_pam = 1 << qam_m;
-            int bits_per_sym = qam_m * 2;
-
-            std::vector<Complex> rx_eq;
-            std::vector<double> rx_amp;
-            rx_eq.reserve(n_sc * n_sym);
-            rx_amp.reserve(n_sc * n_sym);
-
-            for (int sym = 0; sym < n_sym; sym++) {
-                if (!is_pdsch_symbol(sym, dmrs_pattern_, config_, slot_idx)) continue;
-                for (int sc = 0; sc < n_sc; sc++) {
-                    Complex tx_val = tx_res.tx_grid.get_re(0, sym, sc);
-                    Complex h_val = h(sc, sym, 0);
-                    double nr = nd(local_rng);
-                    double ni = nd(local_rng);
-                    Complex y = tx_val * h_val + Complex(nr, ni);
-                    double h_amp = std::abs(h_val);
-                    if (h_amp < 1e-9) h_amp = 1e-9;
-                    Complex y_mrc = y * std::conj(h_val) / h_amp;
-                    rx_eq.push_back(y_mrc);
-                    rx_amp.push_back(h_amp);
-                }
-            }
-
-            int n_pdsch_res = static_cast<int>(rx_eq.size());
-            SoftVec llr(n_pdsch_res * bits_per_sym);
-
-            double ms_pam = 0.0;
-            for (int k = 0; k < M_pam; k++) { double v = (2.0*k - M_pam + 1.0); ms_pam += v*v; }
-            ms_pam /= M_pam;
-            double a_pam = 1.0 / std::sqrt(2.0 * ms_pam);
-            double var_per_dim = std::max(noise_var / 2.0, 1e-12);
-
-            auto gray_encode = [](int k) { return k ^ (k >> 1); };
-
-            for (int i = 0; i < n_pdsch_res; i++) {
-                Complex y = rx_eq[i];
-                double amp = rx_amp[i];
-                double bits_i[4], bits_q[4];
-                double yiq[2] = { y.real(), y.imag() };
-                double* llrs_iq[2] = { bits_i, bits_q };
-
-                for (int dim = 0; dim < 2; dim++) {
-                    double y_pam = yiq[dim];
-                    double* out_l = llrs_iq[dim];
-                    for (int b = 0; b < qam_m; b++) {
-                        double d0 = 1e30, d1 = 1e30;
-                        for (int k = 0; k < M_pam; k++) {
-                            double s = (2.0*k - M_pam + 1.0) * a_pam * amp;
-                            double dist = (y_pam - s) * (y_pam - s);
-                            int g = gray_encode(k);
-                            int bit_val = (g >> (qam_m - 1 - b)) & 1;
-                            if (bit_val == 0) { if (dist < d0) d0 = dist; }
-                            else              { if (dist < d1) d1 = dist; }
-                        }
-                        out_l[b] = (d1 - d0) / (2.0 * var_per_dim);
-                    }
-                }
-                for (int b = 0; b < qam_m; b++) {
-                    llr[i*bits_per_sym + b] = bits_i[b];
-                    llr[i*bits_per_sym + qam_m + b] = bits_q[b];
-                }
-            }
-
-            for (int i = 0; i < (int)llr.size(); i++) {
-                if (llr[i] > LLR_CLIP) llr[i] = LLR_CLIP;
-                else if (llr[i] < -LLR_CLIP) llr[i] = -LLR_CLIP;
-            }
-
-            SoftVec descrambled = scrambler_->descramble(llr, tx_res.scrambling_seed);
-
-            BitVec decoded_info;
-            rx_res.crc_ok = decode_transport_block(descrambled, tx_res, decoded_info);
-            rx_res.decoded_bits = decoded_info;
-            rx_res.sinr_est = sinr_db;
-            rx_res.noise_var_est = noise_var;
-        } else {
-            int fft_size = get_fft_size(n_pdsch_rbs_, config_.scs);
-            double sample_rate = config_.scs * static_cast<double>(fft_size);
-
-            ComplexCube h = channel_model_->get_channel(n_pdsch_rbs_, n_sym, sample_rate);
-            ComplexVec rx_signal = channel_model_->apply_channel(tx_res.tx_signal, h);
-
-            double noise_var_slow = 1.0 / sinr_lin;
-            rx_signal = channel_model_->add_noise(rx_signal, noise_var_slow);
-
-            int n_rx_ant = ch_config.n_rx_ant;
-            ResourceGrid demod_grid = ofdm_modulator_->demodulate(rx_signal, n_rx_ant,
-                                                                  config_.scs, n_sym);
-            ResourceGrid rx_grid = fix_ofdm_demod_grid(demod_grid, n_rx_ant, n_sym, n_sc);
-
-            if (config_.perfect_csi) {
-                channel_estimator_->set_perfect_channel(h, noise_var_slow);
-            }
-
-            rx_res = receive(rx_grid, tx_res, sinr_db, block);
+        if (config_.perfect_csi) {
+            channel_estimator_->set_perfect_channel(h, noise_var_slow);
         }
+
+        rx_res = receive(rx_grid, tx_res, sinr_db, block);
 
         result.n_blocks++;
         if (!rx_res.crc_ok) {

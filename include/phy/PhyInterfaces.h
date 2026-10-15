@@ -95,11 +95,22 @@ public:
 class IResourceMapper {
 public:
     virtual ~IResourceMapper() = default;
+    // dmrs_symbols: OFDM symbol indices carrying DMRS; PDSCH data must not be
+    // mapped on them (caller passes empty for non-DMRS-aware legacy use)
     virtual void map_pdsch(ResourceGrid& grid, const ComplexMat& precoded_symbols,
-                           int rb_start, int rb_len, const SymbolAllocation& sym_alloc) = 0;
+                           int rb_start, int rb_len, const SymbolAllocation& sym_alloc,
+                           const std::vector<int>& dmrs_symbols = {}) = 0;
     virtual ComplexMat extract_pdsch(const ResourceGrid& grid, int rb_start, int rb_len,
-                                     const SymbolAllocation& sym_alloc) = 0;
+                                     const SymbolAllocation& sym_alloc,
+                                     const std::vector<int>& dmrs_symbols = {}) = 0;
 };
+
+// TS 38.214 5.2.1.2 Type I single-panel CSI codebook precoding matrix:
+// W (n_tx_ant x n_layers), unit-norm columns; rank 1/2 exact, rank > 2 falls
+// back to identity. n_tx_ant must equal 2*N1*N2 (dual polarization).
+ComplexMat build_type1_csi_precoder(int n_tx_ant, int n_layers,
+                                    int n1, int n2, int i1_phi,
+                                    int i11, int i12, int i2);
 
 class IOfdmModulator {
 public:

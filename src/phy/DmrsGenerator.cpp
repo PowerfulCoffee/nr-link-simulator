@@ -28,12 +28,17 @@ Complex get_dmrs_symbol(const std::vector<uint8_t>& c_seq, int m) {
     return Complex(re, im);
 }
 
-uint32_t compute_cinit(int n_symb_slot, int n_slot, int l, uint16_t N_id) {
-    uint64_t term1 = (1ULL << 17);
-    uint64_t term2 = (uint64_t)(n_symb_slot * n_slot + l + 1);
-    uint64_t term3 = 2ULL * N_id + 1ULL;
-    uint32_t cinit = (uint32_t)(term1 * term2 * term3 + 2ULL * N_id);
-    return cinit;
+// TS 38.211 §7.4.1.1.1: DMRS sequence generation
+// c_init = (2^17*(N_symb_slot*n_s,f + l + 1)*(2*N_ID + 1)
+//           + 2^17*floor(lambda/2) + 2*N_ID + n_SCID) mod 2^31
+// lambda = CDM group index
+uint32_t compute_cinit(int n_symb_slot, int n_slot, int l, uint16_t N_id,
+                       int cdm_group, int n_scid) {
+    uint64_t t = (1ULL << 17) * (uint64_t)(n_symb_slot * n_slot + l + 1)
+                 * ((uint64_t)(2 * N_id) + 1);
+    t += ((1ULL << 17) * (uint64_t)(cdm_group / 2));
+    t += (uint64_t)(2 * N_id) + (uint64_t)n_scid;
+    return (uint32_t)(t % (1ULL << 31));
 }
 
 int get_dmrs_symbol_position(int additional_pos, int duration, int idx) {
@@ -75,11 +80,17 @@ public:
         int n_sc = grid.n_subcarriers;
         int n_sym = grid.n_symbols;
         int n_ant = grid.n_ant;
-        int n_layers = std::min(config.n_layers, (config.dmrs_type == DmrsType::TYPE1) ? 4 : 6);
+        bool is_type1 = (config.dmrs_type == DmrsType::TYPE1);
+        // TS 38.211 Table 7.4.1.1.2-1/-2: number of CDM groups and max ports
+        // Type1: 2 CDM groups (delta=0/1), ports 1000-1003 (4 layers)
+        // Type2: 3 CDM groups (delta=0/1/2), ports 1000-1005 (6 layers)
+        int n_cdm_groups = is_type1 ? 2 : 3;
+        int max_ports = is_type1 ? 4 : 6;
+        int n_layers = std::min(config.n_layers, max_ports);
 
         int n_dmrs_sym = get_num_dmrs_symbols(config.dmrs_additional_pos);
 
-        uint16_t N_id = 0;
+        uint16_t N_id = static_cast<uint16_t>(config.n_id_dmrs);
         int n_symb_slot = 14;
 
         for (int dmrs_idx = 0; dmrs_idx < n_dmrs_sym; dmrs_idx++) {
@@ -89,18 +100,46 @@ public:
 
             int sym = l;
 
-            int seq_len = n_sc;
-            uint32_t cinit = compute_cinit(n_symb_slot, slot_idx, sym, N_id);
-            std::vector<uint8_t> c_seq;
-            generate_pn_sequence(cinit, 2 * seq_len, c_seq);
+            // One PN sequence per CDM group per symbol
+            // seq covers r(2n+k') with n up to n_rb * (is_type1 ? 3 : 2), k' in {0,1}
+            int seq_len = is_type1 ? (n_rb * 3 + 1) * 2 : (n_rb * 2 + 1) * 2;
+            if (seq_len < 2) seq_len = 2;
 
             for (int layer = 0; layer < n_layers; layer++) {
-                for (int sc = layer; sc < n_sc; sc += n_layers) {
-                    int m = sc;
-                    if (m >= seq_len) continue;
-                    Complex dmrs_val = get_dmrs_symbol(c_seq, m);
-                    int ant = layer % n_ant;
-                    grid.set_re(ant, sym, sc, dmrs_val);
+                // Port 1000+p: CDM group = p % n_cdm_groups, freq OCC index = p / n_cdm_groups
+                int cdm = layer % n_cdm_groups;
+                int occ_idx = layer / n_cdm_groups;
+                int delta = cdm;
+
+                int ant = layer % n_ant;
+                uint32_t cinit = compute_cinit(n_symb_slot, slot_idx, sym, N_id, cdm, 0);
+                std::vector<uint8_t> c_seq;
+                generate_pn_sequence(cinit, 2 * seq_len, c_seq);
+
+                // Mapping per 38.211 7.4.1.1.2:
+                //   Type1: k = 4n + 2k' + delta, k' = 0,1  (n = 0,1,2 within each PRB)
+                //   Type2: k = 6n + k' + delta,  k' = 0,1  (n = 0,1 within each PRB)
+                for (int prb = 0; prb < n_rb; prb++) {
+                    int n_max = is_type1 ? 3 : 2;
+                    for (int n = 0; n < n_max; n++) {
+                        for (int kp = 0; kp < 2; kp++) {
+                            int sc = prb * 12 + delta + (is_type1 ? 4 * n + 2 * kp : 6 * n + kp);
+                            if (sc >= n_sc) continue;
+                            // r(2n + k') : sequence index, continuous across PRBs
+                            int r_idx = 2 * n_max * prb + 2 * n + kp;
+                            if (2 * r_idx + 1 >= 2 * seq_len) continue;
+                            // TS 38.211 7.4.1.1.2 freq OCC w_f(k') = [1, +/-1] applied
+                            // across the RE PAIR (kp=0, kp=1): the second port of a
+                            // CDM group keeps the same sign on the pair's first RE
+                            // and flips only on the second RE. This makes the pair
+                            // (y0 = (h_a+h_b)*r0, y1 = (h_a-h_b)*r1) separable at
+                            // the receiver. A constant -1 over the whole comb would
+                            // collapse every pair to a single inseparable sum.
+                            double w_f = (occ_idx == 0 || kp == 0) ? 1.0 : -1.0;
+                            Complex dmrs_val = get_dmrs_symbol(c_seq, r_idx) * w_f;
+                            grid.set_re(ant, sym, sc, dmrs_val);
+                        }
+                    }
                 }
             }
         }

@@ -46,6 +46,20 @@ add_executable(pdsch_bler_all_mcs pdsch_bler_all_mcs.cpp)
 target_link_libraries(pdsch_bler_all_mcs PRIVATE nr_phy)
 target_include_directories(pdsch_bler_all_mcs PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+add_executable(pdsch_bler_baseline pdsch_bler_baseline.cpp)
+target_link_libraries(pdsch_bler_baseline PRIVATE nr_phy)
+target_include_directories(pdsch_bler_baseline PRIVATE ${PROJECT_SOURCE_DIR}/include)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(pdsch_bler_baseline PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+add_executable(pdsch_bler_web pdsch_bler_web.cpp)
+target_link_libraries(pdsch_bler_web PRIVATE nr_phy)
+target_include_directories(pdsch_bler_web PRIVATE ${PROJECT_SOURCE_DIR}/include)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(pdsch_bler_web PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 add_executable(print_mcs_params print_mcs_params.cpp)
 target_link_libraries(print_mcs_params PRIVATE nr_phy)
 target_include_directories(print_mcs_params PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -113,6 +127,14 @@ target_include_directories(cross_check_cpp PRIVATE ${PROJECT_SOURCE_DIR}/include
 add_executable(test_qpsk_bler test_qpsk_bler.cpp)
 target_link_libraries(test_qpsk_bler PRIVATE nr_phy)
 target_include_directories(test_qpsk_bler PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(test_type1_precoder test_type1_precoder.cpp)
+target_link_libraries(test_type1_precoder PRIVATE nr_phy)
+target_include_directories(test_type1_precoder PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(test_ls_mimo test_ls_mimo.cpp)
+target_link_libraries(test_ls_mimo PRIVATE nr_phy)
+target_include_directories(test_ls_mimo PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(pdsch_bler_simulation PRIVATE OpenMP::OpenMP_CXX)

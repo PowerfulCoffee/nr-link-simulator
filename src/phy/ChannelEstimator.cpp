@@ -114,14 +114,14 @@ public:
         int n_tx_ant = dmrs_grid.n_ant;
         int n_layers = config.n_layers;
         
-        int n_ch = n_rx_ant * n_layers;
+        int n_ch = n_rx_ant * n_tx_ant;  // per-port channels (rx x tx)
         ComplexCube h_est(n_sc, n_sym, n_ch, arma::fill::zeros);
-        
+
         std::vector<int> dmrs_symbols = find_dmrs_symbols(dmrs_grid, n_tx_ant);
         if (dmrs_symbols.empty()) {
             for (int rx = 0; rx < n_rx_ant; rx++) {
-                for (int l = 0; l < n_layers; l++) {
-                    int ch_idx = rx * n_layers + l;
+                for (int tx = 0; tx < n_tx_ant; tx++) {
+                    int ch_idx = rx * n_tx_ant + tx;
                     for (int sc = 0; sc < n_sc; sc++) {
                         for (int sym = 0; sym < n_sym; sym++) {
                             h_est(sc, sym, ch_idx) = Complex(1.0, 0.0);
@@ -137,22 +137,120 @@ public:
         double noise_power_sum = 0.0;
         int noise_sample_count = 0;
         constexpr double MIN_NOISE_VAR = 1e-10;
-        constexpr double SCALE_INTERNAL = 2.0 / 3.0;
+        // Edge two-point difference: s = h_next - h_prev, Var(s) = 2*sigma^2
         constexpr double SCALE_EDGE = 0.5;
 
-        int ref_tx_ant = std::min(n_tx_ant, n_layers);
+        // ---- Type1 CDM-group pairing (TS 38.211 7.4.1.1.2 freq OCC) ----
+        // Ports p and p+2 of a CDM group share the same DMRS RE pairs; the
+        // OCC w_f = [1, +/-1] across the pair yields, per RE pair,
+        //   y(first)/r0  = h_p + h_{p+2}
+        //   y(second)/r1 = h_p - h_{p+2}
+        // which is jointly solvable for both ports. Without the joint solve
+        // a per-port LS returns inseparable sums and MIMO-LS collapses.
+        // Enabled only when the paired port exists (>=3 layers); SISO and
+        // 2-layer runs keep the legacy per-port LS path below unchanged.
+        const bool is_type1_dmrs = (config.dmrs_type == DmrsType::TYPE1);
+        const int max_ports = is_type1_dmrs ? 4 : 6;
+        const int n_gen_layers = std::min(config.n_layers, max_ports);
+        const bool pair_mode = is_type1_dmrs && n_gen_layers >= 3;
+
         for (int dmrs_sym : dmrs_symbols) {
             for (int rx = 0; rx < n_rx_ant; rx++) {
-                for (int l = 0; l < n_layers; l++) {
-                    int ch_idx = rx * n_layers + l;
-                    int tx = l % ref_tx_ant;
-                    
+                if (pair_mode) {
+                    auto accumulate_noise = [&](const std::vector<int>& scs, int ch, double scale) {
+                        if (scs.size() < 2) return;
+                        {
+                            Complex ns = h_est(scs[1], dmrs_sym, ch) - h_est(scs[0], dmrs_sym, ch);
+                            noise_power_sum += SCALE_EDGE * std::norm(ns) * scale;
+                            noise_sample_count++;
+                        }
+                        for (size_t i = 1; i + 1 < scs.size(); i++) {
+                            double d1 = static_cast<double>(scs[i] - scs[i - 1]);
+                            double d2 = static_cast<double>(scs[i + 1] - scs[i]);
+                            if (d1 <= 0.0 || d2 <= 0.0) continue;
+                            double d12 = d1 + d2;
+                            Complex ns = (h_est(scs[i - 1], dmrs_sym, ch) * (d2 / d12)
+                                        + h_est(scs[i + 1], dmrs_sym, ch) * (d1 / d12))
+                                       - h_est(scs[i], dmrs_sym, ch);
+                            double w2 = d2 / d12, w1 = d1 / d12;
+                            noise_power_sum += std::norm(ns) * scale / (1.0 + w2 * w2 + w1 * w1);
+                            noise_sample_count++;
+                        }
+                        {
+                            size_t n = scs.size();
+                            Complex ns = h_est(scs[n - 2], dmrs_sym, ch) - h_est(scs[n - 1], dmrs_sym, ch);
+                            noise_power_sum += SCALE_EDGE * std::norm(ns) * scale;
+                            noise_sample_count++;
+                        }
+                    };
+
+                    for (int g = 0; g < 2; g++) {
+                        int tx_base = g;
+                        if (tx_base >= n_gen_layers) continue;
+                        int tx_pair = g + 2;
+                        const bool has_pair = (tx_pair < n_gen_layers);
+                        const int ch_base = rx * n_tx_ant + tx_base;
+                        const int ch_pair = rx * n_tx_ant + tx_pair;
+
+                        std::vector<int> dmrs_sc = find_dmrs_subcarriers(dmrs_grid, dmrs_sym, tx_base);
+
+                        for (size_t i = 0; i + 1 < dmrs_sc.size(); i += 2) {
+                            int s0 = dmrs_sc[i], s1 = dmrs_sc[i + 1];
+                            Complex ref0 = dmrs_grid.get_re(tx_base, dmrs_sym, s0);
+                            Complex ref1 = dmrs_grid.get_re(tx_base, dmrs_sym, s1);
+                            Complex y0 = rx_grid.get_re(rx, dmrs_sym, s0);
+                            Complex y1 = rx_grid.get_re(rx, dmrs_sym, s1);
+                            Complex sv = (std::abs(ref0) > 1e-10) ? y0 / ref0 : Complex(0.0, 0.0);
+                            Complex dv = (std::abs(ref1) > 1e-10) ? y1 / ref1 : Complex(0.0, 0.0);
+                            if (has_pair) {
+                                Complex h_b = 0.5 * (sv + dv);
+                                Complex h_p = 0.5 * (sv - dv);
+                                h_est(s0, dmrs_sym, ch_base) = h_b;
+                                h_est(s1, dmrs_sym, ch_base) = h_b;
+                                h_est(s0, dmrs_sym, ch_pair) = h_p;
+                                h_est(s1, dmrs_sym, ch_pair) = h_p;
+                            } else {
+                                h_est(s0, dmrs_sym, ch_base) = sv;
+                                h_est(s1, dmrs_sym, ch_base) = dv;
+                            }
+                        }
+                        if (dmrs_sc.size() % 2 == 1) { // defensive odd tail
+                            int s0 = dmrs_sc.back();
+                            Complex ref0 = dmrs_grid.get_re(tx_base, dmrs_sym, s0);
+                            Complex y0 = rx_grid.get_re(rx, dmrs_sym, s0);
+                            if (std::abs(ref0) > 1e-10) h_est(s0, dmrs_sym, ch_base) = y0 / ref0;
+                        }
+
+                        // joint LS writes the same value to both REs of a pair,
+                        // so thin to one sample per pair (value is N(h, sigma^2/2))
+                        // for the differencing statistic; otherwise the repeated
+                        // values shrink the variance estimate by 3x.
+                        std::vector<int> scs_stat;
+                        if (has_pair) {
+                            scs_stat.reserve((dmrs_sc.size() + 1) / 2);
+                            for (size_t i = 0; i < dmrs_sc.size(); i += 2) {
+                                scs_stat.push_back(dmrs_sc[i]);
+                            }
+                        } else {
+                            scs_stat = dmrs_sc;
+                        }
+                        accumulate_noise(scs_stat, ch_base, has_pair ? 2.0 : 1.0);
+                        if (has_pair) accumulate_noise(scs_stat, ch_pair, 2.0);
+
+                        interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_base, n_sc);
+                        if (has_pair) interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_pair, n_sc);
+                    }
+                    continue; // pair path done for this (dmrs_sym, rx)
+                }
+                for (int tx = 0; tx < n_tx_ant; tx++) {
+                    int ch_idx = rx * n_tx_ant + tx;
+
                     std::vector<int> dmrs_sc = find_dmrs_subcarriers(dmrs_grid, dmrs_sym, tx);
-                    
+
                     for (int sc : dmrs_sc) {
                         Complex rx_val = rx_grid.get_re(rx, dmrs_sym, sc);
                         Complex ref_val = dmrs_grid.get_re(tx, dmrs_sym, sc);
-                        
+
                         if (std::abs(ref_val) > 1e-10) {
                             h_est(sc, dmrs_sym, ch_idx) = rx_val / ref_val;
                         } else {
@@ -160,40 +258,55 @@ public:
                         }
                     }
 
+                    // Noise estimation based on the actual DMRS subcarrier
+                    // spacing (comb-2 for Type 1: d = 2; Type 2 has uneven
+                    // gaps). Each LS estimate h = h + n has Var(n) = sigma^2
+                    // (unit-power DMRS), independent of spacing; only the
+                    // smoothing weights depend on the gaps.
                     if (dmrs_sc.size() >= 2) {
+                        // Edge first difference
                         {
                             int sc_first = dmrs_sc[0];
                             int sc_next = dmrs_sc[1];
-                            Complex h_first = h_est(sc_first, dmrs_sym, ch_idx);
-                            Complex h_next = h_est(sc_next, dmrs_sym, ch_idx);
-                            Complex noise_sample = h_next - h_first;
+                            Complex noise_sample = h_est(sc_next, dmrs_sym, ch_idx)
+                                                 - h_est(sc_first, dmrs_sym, ch_idx);
                             noise_power_sum += SCALE_EDGE * std::norm(noise_sample);
                             noise_sample_count++;
                         }
 
+                        // Interior three-point linear smoothing with spacing
+                        // (d1, d2): s = (d2*h_prev + d1*h_next)/(d1+d2) - h_curr
+                        // Var(s) = sigma^2 * (1 + (d2/(d1+d2))^2 + (d1/(d1+d2))^2)
+                        // For comb-2 (d1 = d2 = 2): Var = 3/2*sigma^2 -> scale 2/3
                         for (size_t i = 1; i + 1 < dmrs_sc.size(); i++) {
                             int sc_prev = dmrs_sc[i - 1];
                             int sc_curr = dmrs_sc[i];
                             int sc_next = dmrs_sc[i + 1];
+                            double d1 = static_cast<double>(sc_curr - sc_prev);
+                            double d2 = static_cast<double>(sc_next - sc_curr);
+                            double d12 = d1 + d2;
+                            if (d1 <= 0.0 || d2 <= 0.0) continue;
                             Complex h_prev = h_est(sc_prev, dmrs_sym, ch_idx);
                             Complex h_curr = h_est(sc_curr, dmrs_sym, ch_idx);
                             Complex h_next = h_est(sc_next, dmrs_sym, ch_idx);
-                            Complex noise_sample = (h_prev + h_next) / 2.0 - h_curr;
-                            noise_power_sum += SCALE_INTERNAL * std::norm(noise_sample);
+                            Complex noise_sample = (h_prev * (d2 / d12) + h_next * (d1 / d12)) - h_curr;
+                            double w2 = d2 / d12, w1 = d1 / d12;
+                            double var_factor = 1.0 + w2 * w2 + w1 * w1;
+                            noise_power_sum += std::norm(noise_sample) / var_factor;
                             noise_sample_count++;
                         }
 
+                        // Edge last difference
                         {
                             int sc_last = dmrs_sc.back();
                             int sc_prev = dmrs_sc[dmrs_sc.size() - 2];
-                            Complex h_last = h_est(sc_last, dmrs_sym, ch_idx);
-                            Complex h_prev = h_est(sc_prev, dmrs_sym, ch_idx);
-                            Complex noise_sample = h_prev - h_last;
+                            Complex noise_sample = h_est(sc_prev, dmrs_sym, ch_idx)
+                                                 - h_est(sc_last, dmrs_sym, ch_idx);
                             noise_power_sum += SCALE_EDGE * std::norm(noise_sample);
                             noise_sample_count++;
                         }
                     }
-                    
+
                     interpolate_frequency(h_est, dmrs_sc, dmrs_sym, ch_idx, n_sc);
                 }
             }
@@ -220,8 +333,8 @@ public:
             double delta_t = t_b - t_a;
 
             for (int rx = 0; rx < n_rx_ant; rx++) {
-                for (int l = 0; l < n_layers; l++) {
-                    int ch_idx = rx * n_layers + l;
+                for (int tx = 0; tx < n_tx_ant; tx++) {
+                    int ch_idx = rx * n_tx_ant + tx;
                     for (int sc = 0; sc < n_sc; sc++) {
                         Complex h_a = h_est(sc, sym_a, ch_idx);
                         Complex h_b = h_est(sc, sym_b, ch_idx);
@@ -236,10 +349,10 @@ public:
                 estimated_doppler_ = phase_diff / (2.0 * M_PI * delta_t);
             }
         }
-        
+
         for (int rx = 0; rx < n_rx_ant; rx++) {
-            for (int l = 0; l < n_layers; l++) {
-                int ch_idx = rx * n_layers + l;
+            for (int tx = 0; tx < n_tx_ant; tx++) {
+                int ch_idx = rx * n_tx_ant + tx;
                 
                 int first_dmrs_sym = dmrs_symbols.front();
                 int last_dmrs_sym = dmrs_symbols.back();

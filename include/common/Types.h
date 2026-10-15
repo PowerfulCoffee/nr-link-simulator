@@ -55,6 +55,12 @@ enum class DmrsType {
     TYPE2
 };
 
+// Precoding mode: identity matrix or Type I CSI-RS codebook (TS 38.214 5.2.1.2)
+enum class PrecoderMode {
+    IDENTITY,
+    TYPE1_CSI
+};
+
 enum class SlotType {
     DOWNLINK,
     UPLINK,
@@ -120,6 +126,23 @@ struct SimulationConfig {
     int n_ldpc_iterations = 25;
     bool early_termination = true;
     bool perfect_csi = false;
+
+    // --- Scrambling identities (TS 38.211 7.3.1.1) ---
+    // c_init = n_RNTI * 2^15 + q * 2^14 + n_ID  (q = 0 for single codeword)
+    int n_rnti = 1;       // C-RNTI of the scheduled UE
+    int n_id_pdsch = 0;   // data scrambling ID (N_ID^cell if not configured)
+    int n_id_dmrs = 0;    // DMRS scrambling ID (scramblingID0), for 38.211 7.4.1.1.1
+
+    // --- Precoder configuration ---
+    PrecoderMode precoder_mode = PrecoderMode::IDENTITY;
+    // Type I single-panel codebook parameters (38.214 5.2.1.2):
+    // antenna layout N1 x N2 with dual polarization -> n_tx_ant = 2*N1*N2
+    int csi_n1 = 1;       // antenna elements per polarization, horizontal
+    int csi_n2 = 1;       // antenna elements per polarization, vertical
+    int csi_i1_phi = 0;   // i13: polarization phase, phi in {0,1} -> alpha = e^{j*pi*phi/2}
+    int csi_i11 = 0;      // beam index m1 in {0..N1-1}
+    int csi_i12 = 0;      // beam index m2 in {0..N2-1}
+    int csi_i2 = 0;       // i2 (used for 2Tx single-pol codebook index / beam offset)
 };
 
 struct ResourceGrid {

@@ -1,0 +1,324 @@
+{
+  "version": "1.0",
+  "description": "NR PDSCH E2E 链路级仿真模块注册表：发端 -> 信道 -> 收端 -> 统计",
+  "stages": [
+    { "id": "tx", "name": "发端处理 (TX)", "color": "#2563eb" },
+    { "id": "channel", "name": "信道 (Channel)", "color": "#d97706" },
+    { "id": "rx", "name": "收端处理 (RX)", "color": "#059669" },
+    { "id": "metric", "name": "统计 (Metrics)", "color": "#7c3aed" }
+  ],
+  "global_params": [
+    { "id": "mcs_list", "name": "MCS 列表 (逗号分隔)", "type": "text", "default": "0,4,9,13,16,19,24" },
+    { "id": "mcs_table", "name": "MCS 表", "type": "select", "options": ["qam64", "qam256"], "default": "qam64", "option_names": ["64QAM 表", "256QAM 表"] },
+    { "id": "n_rb", "name": "带宽 (PRB)", "type": "number", "default": 3, "min": 1, "max": 273 },
+    { "id": "n_tx", "name": "发端天线数", "type": "number", "default": 1, "min": 1, "max": 4 },
+    { "id": "n_rx", "name": "收端天线数", "type": "number", "default": 1, "min": 1, "max": 4 },
+    { "id": "n_layers", "name": "层数", "type": "number", "default": 1, "min": 1, "max": 4 },
+    { "id": "seed", "name": "随机种子", "type": "number", "default": 12345, "min": 1, "max": 2147483647 },
+    { "id": "snr_start", "name": "扫描起始 SNR (dB)", "type": "number", "default": -4, "min": -30, "max": 60 },
+    { "id": "snr_end", "name": "扫描终止 SNR (dB)", "type": "number", "default": 20, "min": -30, "max": 60 },
+    { "id": "snr_step", "name": "SNR 步长 (dB)", "type": "number", "default": 2, "min": 1, "max": 10 }
+  ],
+  "pipeline": [
+    {
+      "id": "crc",
+      "stage": "tx",
+      "name": "TB CRC 附着",
+      "function": "create_crc_encoder() -> ICrcEncoder::encode",
+      "source": "src/phy/CrcEncoder.cpp",
+      "spec": "TS 38.212 §5.1 (CRC24A / CRC16)",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "3GPP CRC24A/CRC16", "impl": "CrcEncoder.cpp", "status": "current" }
+      ],
+      "note": "CRC 长度按 TB 大小自动选择 (>=3824 用 CRC24A，否则 CRC16)"
+    },
+    {
+      "id": "cbs",
+      "stage": "tx",
+      "name": "码块分割 (CB Segmentation)",
+      "function": "compute_cb_segmentation()",
+      "source": "src/phy/PdschProcessor.cpp",
+      "spec": "TS 38.212 §5.2.2",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "3GPP 标准分割 + CB CRC", "impl": "PdschProcessor.cpp", "status": "current" }
+      ],
+      "note": "K_b/Zc/Base Graph 自动选择；单 CB 不附 CB CRC"
+    },
+    {
+      "id": "ldpc_enc",
+      "stage": "tx",
+      "name": "LDPC 编码",
+      "function": "create_ldpc_encoder() -> ILdpcEncoder::encode",
+      "source": "src/phy/LdpcCodec.cpp",
+      "spec": "TS 38.212 §5.3.2 (QC-LDPC BG1/BG2)",
+      "params": [],
+      "algorithms": [
+        { "id": "approx-ml", "name": "校验矩阵求解编码 (子矩阵消元)", "impl": "LdpcCodec.cpp", "status": "current" }
+      ],
+      "note": "Base Graph 由 CB 分割按码率/TB 大小决定"
+    },
+    {
+      "id": "rate_match",
+      "stage": "tx",
+      "name": "速率匹配 (Rate Matching)",
+      "function": "create_rate_matcher() -> IRateMatcher::rate_match",
+      "source": "src/phy/RateMatcher.cpp",
+      "spec": "TS 38.212 §5.4.2 (k0 选择 / 奇偶交织 / 打孔)",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "3GPP k0 + 奇偶位交织", "impl": "RateMatcher.cpp", "status": "current" }
+      ],
+      "note": "已修复: k0 (Table 5.4.2.1-2) + Table 5.4.2.1-3 奇偶交织 (P0); 当前扫描固定 RV=0"
+    },
+    {
+      "id": "scramble",
+      "stage": "tx",
+      "name": "加扰 (Scrambling)",
+      "function": "create_scrambler() -> IScrambler::scramble",
+      "source": "src/phy/Scrambler.cpp",
+      "spec": "TS 38.211 §7.3.1.1",
+      "params": [
+        { "id": "n_rnti", "name": "n_RNTI (C-RNTI)", "type": "number", "default": 1, "min": 1, "max": 65535 },
+        { "id": "n_id", "name": "n_ID (扰码 ID)", "type": "number", "default": 0, "min": 0, "max": 65535 }
+      ],
+      "algorithms": [
+        { "id": "3gpp", "name": "c_init = n_RNTI*2^15 + q*2^14 + n_ID", "impl": "Scrambler.cpp", "status": "current" }
+      ],
+      "note": "已修复: c_init 按 38.211 7.3.1.1 计算 (P0)"
+    },
+    {
+      "id": "modulate",
+      "stage": "tx",
+      "name": "星座调制",
+      "function": "create_modulator() -> IModulator::modulate",
+      "source": "src/phy/Modulator.cpp",
+      "spec": "TS 38.211 §5.1 (QPSK/16QAM/64QAM/256QAM Gray 映射)",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp-gray", "name": "3GPP Gray 映射", "impl": "Modulator.cpp", "status": "current" }
+      ],
+      "note": "调制阶数由 MCS 索引查表决定 (mcs_table 全局参数)"
+    },
+    {
+      "id": "layer_map",
+      "stage": "tx",
+      "name": "层映射 (Layer Mapping)",
+      "function": "create_layer_mapper() -> ILayerMapper::map",
+      "source": "src/phy/LayerMapper.cpp",
+      "spec": "TS 38.211 §7.3.1.1",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "标准层映射", "impl": "LayerMapper.cpp", "status": "current" }
+      ],
+      "note": "层数由全局参数 n_layers 决定"
+    },
+    {
+      "id": "precode",
+      "stage": "tx",
+      "name": "预编码 (Precoding)",
+      "function": "create_precoder() -> IPrecoder::precode",
+      "source": "src/phy/Precoder.cpp",
+      "spec": "TS 38.214 §5.2.1 (Type I CSI 码本)",
+      "params": [
+        { "id": "precoder", "name": "预编码算法", "type": "select", "options": ["identity", "type1"], "default": "identity", "option_names": ["恒等 (SISO/直通)", "Type I CSI 码本"] },
+        { "id": "csi_n1", "name": "CSI N1 (水平)", "type": "select", "options": [1, 2, 4], "default": 1 },
+        { "id": "csi_n2", "name": "CSI N2 (垂直)", "type": "select", "options": [1, 2], "default": 1 },
+        { "id": "csi_i11", "name": "波束索引 m1", "type": "number", "default": 0, "min": 0, "max": 3 },
+        { "id": "csi_i12", "name": "波束索引 m2", "type": "number", "default": 0, "min": 0, "max": 3 },
+        { "id": "csi_i1_phi", "name": "极化相位 i13", "type": "number", "default": 0, "min": 0, "max": 1 }
+      ],
+      "algorithms": [
+        { "id": "identity", "name": "恒等预编码", "impl": "Precoder.cpp", "status": "current" },
+        { "id": "type1", "name": "Type I CSI 单面板码本", "impl": "Precoder.cpp", "status": "current" }
+      ],
+      "note": "已实现 Type I CSI (P1); n_tx = 2*N1*N2"
+    },
+    {
+      "id": "dmrs",
+      "stage": "tx",
+      "name": "DMRS 生成",
+      "function": "create_dmrs_generator() -> IDmrsGenerator::generate_dmrs",
+      "source": "src/phy/DmrsGenerator.cpp",
+      "spec": "TS 38.211 §7.4.1.1 (Type 1/2, comb 映射, c_init)",
+      "params": [
+        { "id": "dmrs_type", "name": "DMRS 类型", "type": "select", "options": [1, 2], "default": 1, "option_names": ["Type 1 (comb-2, 4 端口)", "Type 2 (comb-6, 6 端口)"] },
+        { "id": "dmrs_addpos", "name": "附加位置 pos", "type": "select", "options": [0, 1, 2, 3], "default": 0 },
+        { "id": "dmrs_duration", "name": "符号数", "type": "select", "options": [1, 2], "default": 1 },
+        { "id": "n_id_dmrs", "name": "N_ID (DMRS 扰码)", "type": "number", "default": 0, "min": 0, "max": 65535 }
+      ],
+      "algorithms": [
+        { "id": "3gpp", "name": "38.211 序列 + comb 映射", "impl": "DmrsGenerator.cpp", "status": "current" }
+      ],
+      "note": "已修复: Type 1 梳状映射 + c_init 含 CDM/lambda 项 (P0)"
+    },
+    {
+      "id": "res_map",
+      "stage": "tx",
+      "name": "资源映射",
+      "function": "create_resource_mapper() -> IResourceMapper::map_to_grid",
+      "source": "src/phy/ResourceMapper.cpp",
+      "spec": "TS 38.211 §7.3.1 (数据 RE 填充, 跳过 DMRS/控制 RE)",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "跳过 DMRS 符号/RE 的顺序映射", "impl": "ResourceMapper.cpp", "status": "current" }
+      ],
+      "note": "已修复: 资源映射跳过 DMRS RE (P1)"
+    },
+    {
+      "id": "ofdm_mod",
+      "stage": "tx",
+      "name": "OFDM 调制",
+      "function": "create_ofdm_modulator() -> IOfdmModulator::modulate",
+      "source": "src/phy/OfdmModulator.cpp",
+      "spec": "TS 38.211 §5.3 (IFFT + CP)",
+      "params": [
+        { "id": "scs", "name": "子载波间隔 (kHz)", "type": "select", "options": [15, 30, 60], "default": 15, "option_names": ["15 kHz", "30 kHz", "60 kHz"] }
+      ],
+      "algorithms": [
+        { "id": "std", "name": "IFFT + 常规 CP", "impl": "OfdmModulator.cpp", "status": "current" }
+      ],
+      "note": "FFT 尺寸随 RB 数自动选择 (>=n_rb*12 的最小 2 次幂)"
+    },
+    {
+      "id": "channel",
+      "stage": "channel",
+      "name": "信道模型",
+      "function": "channel::create_channel() -> IChannelModel::apply + add_noise",
+      "source": "src/channel/AwgnChannel.cpp, TdlChannel.cpp, CdlChannel.cpp",
+      "spec": "3GPP TR 38.901 (AWGN / TDL-A~E / CDL-A~E)",
+      "params": [
+        { "id": "channel", "name": "信道模型", "type": "select", "options": ["AWGN", "TDL_A", "TDL_B", "TDL_C", "TDL_D", "TDL_E", "CDL_A", "CDL_B", "CDL_C", "CDL_D", "CDL_E"], "default": "AWGN", "option_names": ["AWGN", "TDL-A", "TDL-B", "TDL-C", "TDL-D", "TDL-E", "CDL-A", "CDL-B", "CDL-C", "CDL-D", "CDL-E"] },
+        { "id": "delay_spread_ns", "name": "RMS 时延扩展 (ns)", "type": "number", "default": 30, "min": 1, "max": 1000 },
+        { "id": "doppler", "name": "最大多普勒 (Hz)", "type": "number", "default": 5, "min": 0, "max": 5000 },
+        { "id": "los", "name": "LOS 场景", "type": "select", "options": ["false", "true"], "default": "false", "option_names": ["NLOS", "LOS"] }
+      ],
+      "algorithms": [
+        { "id": "awgn", "name": "纯 AWGN (时域加噪)", "impl": "AwgnChannel.cpp", "status": "current" },
+        { "id": "stat", "name": "3GPP 统计信道 TDL (TR 38.901)", "impl": "TdlChannel.cpp", "status": "current" },
+        { "id": "cdl", "name": "3GPP 统计信道 CDL (TR 38.901)", "impl": "CdlChannel.cpp", "status": "current" }
+      ],
+      "note": "非 AWGN 时按 RMS 时延扩展与多普勒生成抽头; 信道输出为时域信号，收端经 OFDM 解调还原"
+    },
+    {
+      "id": "ofdm_demod",
+      "stage": "rx",
+      "name": "OFDM 解调",
+      "function": "create_ofdm_modulator() -> IOfdmModulator::demodulate",
+      "source": "src/phy/OfdmModulator.cpp",
+      "spec": "TS 38.211 §5.3 (去 CP + FFT，与发端 modulate 互为 unitary 逆变换)",
+      "params": [],
+      "algorithms": [
+        { "id": "std", "name": "去 CP + FFT", "impl": "OfdmModulator.cpp", "status": "current" }
+      ],
+      "note": "收发对称环节: transmit 的 IFFT+CP 由本模块还原为频域 grid 后送入信道估计"
+    },
+    {
+      "id": "chan_est",
+      "stage": "rx",
+      "name": "信道估计",
+      "function": "create_ls_channel_estimator() -> IChannelEstimator::estimate",
+      "source": "src/phy/ChannelEstimator.cpp",
+      "spec": "基于 DMRS 的 LS 估计 + comb-2 间隔感知噪声估计",
+      "params": [
+        { "id": "csi", "name": "CSI 获取方式", "type": "select", "options": ["ls", "perfect"], "default": "ls", "option_names": ["LS (DMRS 估计)", "Perfect (理想信道)"] }
+      ],
+      "algorithms": [
+        { "id": "ls", "name": "LS + 频域/时域插值", "impl": "ChannelEstimator.cpp", "status": "current" },
+        { "id": "perfect", "name": "理想信道 (perfect CSI)", "impl": "ChannelEstimator.cpp", "status": "current" }
+      ],
+      "note": "已修复: 按 DMRS comb-2 间隔估计噪声 (P1)"
+    },
+    {
+      "id": "equalize",
+      "stage": "rx",
+      "name": "均衡",
+      "function": "create_mmse_equalizer() -> IMmserEqualizer::equalize",
+      "source": "src/phy/Equalizer.cpp",
+      "spec": "MMSE 线性均衡 (无偏校正 + 有效噪声方差传递)",
+      "params": [],
+      "algorithms": [
+        { "id": "mmse", "name": "MMSE", "impl": "Equalizer.cpp", "status": "current" },
+        { "id": "zf", "name": "迫零 ZF (计划)", "impl": "-", "status": "planned" }
+      ],
+      "note": "均衡后噪声方差传递给 LLR 归一化"
+    },
+    {
+      "id": "demod",
+      "stage": "rx",
+      "name": "软解调 (LLR)",
+      "function": "create_modulator() -> IModulator::demodulate",
+      "source": "src/phy/Modulator.cpp",
+      "spec": "TS 38.211 §5.1 (Max-Log-MAP LLR)",
+      "params": [],
+      "algorithms": [
+        { "id": "maxlog", "name": "Max-Log-MAP LLR", "impl": "Modulator.cpp", "status": "current" }
+      ],
+      "note": "使用均衡器输出的有效噪声方差归一化"
+    },
+    {
+      "id": "descramble",
+      "stage": "rx",
+      "name": "解扰 + 速率恢复",
+      "function": "IScrambler::descramble -> IRateMatcher::rate_recover",
+      "source": "src/phy/Scrambler.cpp, src/phy/RateMatcher.cpp",
+      "spec": "TS 38.211 §7.3.1.1 / TS 38.212 §5.4.2 (奇偶解交织 + 软合并)",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "标准解扰 + rate recovery", "impl": "Scrambler.cpp / RateMatcher.cpp", "status": "current" }
+      ],
+      "note": "支持多次 RV 传输的软合并 (HARQ combining, 扩展点)"
+    },
+    {
+      "id": "ldpc_dec",
+      "stage": "rx",
+      "name": "LDPC 解码",
+      "function": "create_ldpc_decoder() -> ILdpcDecoder::decode",
+      "source": "src/phy/LdpcCodec.cpp",
+      "spec": "TS 38.212 §5.3.2 (QC-LDPC BP 译码)",
+      "params": [
+        { "id": "n_ldpc_iterations", "name": "迭代次数", "type": "number", "default": 25, "min": 1, "max": 50 }
+      ],
+      "algorithms": [
+        { "id": "spa", "name": "Sum-Product (当前实现)", "impl": "LdpcCodec.cpp", "status": "current" },
+        { "id": "oms", "name": "Offset Min-Sum (计划)", "impl": "-", "status": "planned" }
+      ],
+      "note": "README 声称 OMS，实为 SPA (P2 文档偏差已记录)"
+    },
+    {
+      "id": "tb_check",
+      "stage": "rx",
+      "name": "CB/TB CRC 校验 + BLER 统计",
+      "function": "PdschProcessor::decode_transport_block",
+      "source": "src/phy/PdschProcessor.cpp",
+      "spec": "TS 38.212 §5.1/5.2.2",
+      "params": [],
+      "algorithms": [
+        { "id": "3gpp", "name": "CB CRC + TB CRC 联合判决", "impl": "PdschProcessor.cpp", "status": "current" }
+      ],
+      "note": "输出 BLER / 吞吐 (TBS*(1-BLER)/TTI) 汇总到统计曲线"
+    },
+    {
+      "id": "metrics",
+      "stage": "metric",
+      "name": "扫描统计 (SNR 扫描 / 曲线)",
+      "function": "run_snr_scan -> CSV + curves API",
+      "file": "examples/pdsch_bler_web.cpp, web/server.py",
+      "spec": "逐 SNR 点 BLER 采样与吞吐换算",
+      "params": [
+        {"id": "target_errors", "name": "每点最大错误数", "type": "number", "default": 300, "min": 1, "max": 100000},
+        {"id": "max_blocks", "name": "每点最大块数", "type": "number", "default": 4000, "min": 10, "max": 100000}
+      ],
+      "algorithms": [
+        {"id": "fixed_snr", "label": "固定 SNR 网格扫描 (冷启动)", "builtin": true},
+        {"id": "seq_bler", "label": "序贯 BLER 置信区间扫描 (扩展点)", "builtin": false}
+      ],
+      "selected": "fixed_snr",
+      "note": "多 MCS 逗号分隔一次扫描; 曲线由 server.py 从 CSV 生成"
+    }
+  ]
+}
+
+
+

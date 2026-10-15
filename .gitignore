@@ -1,6 +1,10 @@
 build/
+build_wsl/
 *.o
 *.a
 *.so
 __pycache__/
 *.pyc
+web/runs/
+results/runs/
+

@@ -267,7 +267,16 @@ CodeBlockSegParams compute_cb_segmentation(int tb_size, int n_info_bits_after_tb
         int E_r = G;
         params.cw_length = E_r * params.num_cb;
     } else {
-        params.num_cb = (B + 8423) / 8424;
+        // TS 38.212 5.2.2 code block segmentation (B > 3824):
+        //   R <= 0.25 -> BG2 code blocks, each carrying at most
+        //                3840 - 24 = 3816 information bits
+        //   R >  0.25 -> BG1 code blocks, each carrying at most
+        //                8448 - 24 = 8424 information bits
+        if (target_coderate <= 0.25) {
+            params.num_cb = (B + 3815) / 3816;
+        } else {
+            params.num_cb = (B + 8423) / 8424;
+        }
         params.tb_crc_len = 24;
         params.cb_crc_len = 24;
         
